@@ -624,8 +624,6 @@ Lub jeśli brak makro:
         }
 
         function toggleFavorite(recipeId) {
-            event.stopPropagation(); // Zatrzymaj propagację kliknięcia
-            
             const recipe = recipes.find(r => r.id === recipeId);
             if (!recipe) return;
 
@@ -640,26 +638,23 @@ Lub jeśli brak makro:
                     if (showingFavorites) renderFavorites();
                 }
             } else {
-                // Dodaj do ulubionych - użyj prompt ale z lepszą obsługą
-                setTimeout(() => {
-                    const name = prompt('Nazwa przepisu:', recipe.title) || recipe.title;
-                    const tags = prompt('Hashtagi (oddziel spacjami):\nPrzykład: #śniadanie #fit #szybkie', '') || '';
-                    const hashtagsArray = tags.match(/#\w+/g) || [];
-                    
-                    favorites.push({
-                        title: name,
-                        ingredients: recipe.ingredients,
-                        macros: recipe.macros,
-                        hashtags: hashtagsArray,
-                        savedAt: new Date().toISOString()
-                    });
-                    
-                    saveFavorites();
-                    renderRecipes();
-                    
-                    // Pokaż toast
-                    alert(`✅ "${name}" dodany do ulubionych!`);
-                }, 100);
+                // Dodaj do ulubionych
+                const name = prompt('Nazwa przepisu:', recipe.title);
+                if (!name) return;
+                
+                const tags = prompt('Hashtagi (oddziel spacjami):\nPrzykład: #śniadanie #fit', '');
+                const hashtagsArray = tags ? tags.match(/#\w+/g) || [] : [];
+                
+                favorites.push({
+                    title: name,
+                    ingredients: recipe.ingredients,
+                    macros: recipe.macros,
+                    hashtags: hashtagsArray,
+                    savedAt: new Date().toISOString()
+                });
+                
+                saveFavorites();
+                renderRecipes();
             }
         }
 
