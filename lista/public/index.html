@@ -17,27 +17,20 @@
                 <p class="text-gray-600">Inteligentne przetwarzanie przepisów z makroskładnikami</p>
             </div>
 
-            <div id="apiSetup" class="mb-6 p-4 bg-blue-50 border-2 border-blue-200 rounded-xl">
-                <h3 class="font-bold text-blue-800 mb-3">🔑 Konfiguracja OpenAI API</h3>
-                <p class="text-sm text-blue-700 mb-3">Potrzebujesz klucza API z OpenAI. <a href="https://platform.openai.com/api-keys" target="_blank" class="underline">Utwórz klucz tutaj</a></p>
-                <input 
-                    type="password" 
-                    id="apiKey" 
-                    placeholder="sk-..." 
-                    class="w-full p-3 border-2 border-blue-300 rounded-lg mb-3 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                >
-                <button onclick="saveApiKey()" class="w-full bg-blue-500 text-white font-bold py-3 rounded-lg">
-                    💾 Zapisz Klucz API
-                </button>
+            <div id="apiSetup" class="hidden mb-6 p-4 bg-green-50 border-2 border-green-200 rounded-xl">
+                <p class="text-green-700 text-center">
+                    🔒 <strong>Klucz API bezpiecznie ukryty na serwerze Vercel</strong><br>
+                    <span class="text-sm">Aplikacja gotowa do użycia!</span>
+                </p>
             </div>
 
             <div class="mb-6">
-                <label for="imageInput" id="uploadLabel" class="block w-full bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-bold py-6 px-6 rounded-xl text-center cursor-pointer shadow-lg opacity-50">
+                <label for="imageInput" class="block w-full bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-bold py-6 px-6 rounded-xl text-center cursor-pointer shadow-lg hover:opacity-90">
                     <div class="text-4xl mb-2">📸</div>
-                    <span id="uploadText">Wgraj Screenshot(y) (Najpierw ustaw API Key)</span>
+                    <span>Wgraj Screenshot(y)</span>
                     <p class="text-sm mt-2 opacity-80">✨ Możesz wybrać wiele plików naraz!</p>
                 </label>
-                <input type="file" id="imageInput" accept="image/*" class="hidden" disabled multiple>
+                <input type="file" id="imageInput" accept="image/*" class="hidden" multiple>
             </div>
 
             <!-- Queue Progress -->
@@ -152,41 +145,14 @@
         let recipes = [];
         let selectedRecipes = new Set();
         let shoppingList = [];
-        let apiKey = localStorage.getItem('openai_api_key') || '';
         let recipeIdCounter = 1;
         let isProcessing = false;
         let processingQueue = [];
         let favorites = JSON.parse(localStorage.getItem('favorite_recipes') || '[]');
         let showingFavorites = false;
 
-        if (apiKey) {
-            document.getElementById('apiKey').value = apiKey;
-            document.getElementById('apiSetup').classList.add('hidden');
-            enableUpload();
-        }
-
-        function enableUpload() {
-            const input = document.getElementById('imageInput');
-            const label = document.getElementById('uploadLabel');
-            const text = document.getElementById('uploadText');
-            
-            input.disabled = false;
-            label.classList.remove('opacity-50');
-            label.classList.add('hover:opacity-90');
-            text.textContent = '📸 Wgraj Screenshot(y)';
-        }
-
-        function saveApiKey() {
-            apiKey = document.getElementById('apiKey').value.trim();
-            if (!apiKey.startsWith('sk-')) {
-                alert('Klucz API powinien zaczynać się od "sk-"');
-                return;
-            }
-            localStorage.setItem('openai_api_key', apiKey);
-            document.getElementById('apiSetup').classList.add('hidden');
-            enableUpload();
-            alert('✅ Klucz zapisany!');
-        }
+        // Pokaż info o bezpieczeństwie
+        document.getElementById('apiSetup').classList.remove('hidden');
 
         document.getElementById('imageInput').addEventListener('change', function(e) {
             const files = Array.from(e.target.files);
@@ -197,15 +163,10 @@
                 return;
             }
 
-            // Dodaj wszystkie pliki do kolejki
-            console.log(`Dodano ${files.length} plików do kolejki`);
+                        
             processingQueue = files;
-            
-            // Pokaż progress bar
             document.getElementById('queueProgress').classList.remove('hidden');
             updateQueueProgress(0, files.length);
-            
-            // Rozpocznij przetwarzanie kolejki
             processQueue();
         });
 
@@ -663,6 +624,8 @@ Lub jeśli brak makro:
         }
 
         function toggleFavorite(recipeId) {
+            event.stopPropagation(); // Zatrzymaj propagację kliknięcia
+            
             const recipe = recipes.find(r => r.id === recipeId);
             if (!recipe) return;
 
@@ -670,27 +633,34 @@ Lub jeśli brak makro:
             
             if (existingIndex >= 0) {
                 // Usuń z ulubionych
-                favorites.splice(existingIndex, 1);
+                if (confirm(`Usunąć "${recipe.title}" z ulubionych?`)) {
+                    favorites.splice(existingIndex, 1);
+                    saveFavorites();
+                    renderRecipes();
+                    if (showingFavorites) renderFavorites();
+                }
             } else {
-                // Dodaj do ulubionych - pokaż dialog z nazwą i hashtagami
-                const name = prompt('Nazwa przepisu:', recipe.title);
-                if (!name) return;
-                
-                const tags = prompt('Dodaj hashtagi (oddziel spacjami):\nPrzykład: #śniadanie #fit #szybkie', '');
-                const hashtagsArray = tags ? tags.match(/#\w+/g) || [] : [];
-                
-                favorites.push({
-                    title: name,
-                    ingredients: recipe.ingredients,
-                    macros: recipe.macros,
-                    hashtags: hashtagsArray,
-                    savedAt: new Date().toISOString()
-                });
+                // Dodaj do ulubionych - użyj prompt ale z lepszą obsługą
+                setTimeout(() => {
+                    const name = prompt('Nazwa przepisu:', recipe.title) || recipe.title;
+                    const tags = prompt('Hashtagi (oddziel spacjami):\nPrzykład: #śniadanie #fit #szybkie', '') || '';
+                    const hashtagsArray = tags.match(/#\w+/g) || [];
+                    
+                    favorites.push({
+                        title: name,
+                        ingredients: recipe.ingredients,
+                        macros: recipe.macros,
+                        hashtags: hashtagsArray,
+                        savedAt: new Date().toISOString()
+                    });
+                    
+                    saveFavorites();
+                    renderRecipes();
+                    
+                    // Pokaż toast
+                    alert(`✅ "${name}" dodany do ulubionych!`);
+                }, 100);
             }
-            
-            saveFavorites();
-            renderRecipes();
-            if (showingFavorites) renderFavorites();
         }
 
         function saveFavorites() {
