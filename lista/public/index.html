@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="pl">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -7,6 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
 </head>
+
 <body class="bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 min-h-screen">
     <div class="max-w-6xl mx-auto p-4">
         <div class="bg-white rounded-2xl shadow-2xl p-6">
@@ -18,7 +20,8 @@
             </div>
 
             <div class="mb-6">
-                <label for="imageInput" id="uploadLabel" class="block w-full bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-bold py-6 px-6 rounded-xl text-center cursor-pointer shadow-lg hover:opacity-90">
+                <label for="imageInput" id="uploadLabel"
+                    class="block w-full bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-bold py-6 px-6 rounded-xl text-center cursor-pointer shadow-lg hover:opacity-90">
                     <div class="text-4xl mb-2">📸</div>
                     <span id="uploadText">Wgraj Screenshot(y)</span>
                     <p class="text-sm mt-2 opacity-80">✨ Możesz wybrać wiele plików naraz!</p>
@@ -33,54 +36,49 @@
                     <span class="text-indigo-600 font-bold" id="queueStatus">0 / 0</span>
                 </div>
                 <div class="w-full bg-indigo-200 rounded-full h-3 overflow-hidden">
-                    <div id="queueBar" class="bg-indigo-600 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    <div id="queueBar" class="bg-indigo-600 h-3 rounded-full transition-all duration-300"
+                        style="width: 0%"></div>
                 </div>
                 <p class="text-sm text-indigo-600 mt-2" id="queueInfo">Przetwarzanie...</p>
             </div>
 
-            <div id="recipesCounter" class="hidden mb-4 p-3 bg-green-50 border-2 border-green-200 rounded-lg text-center">
+            <div id="recipesCounter"
+                class="hidden mb-4 p-3 bg-green-50 border-2 border-green-200 rounded-lg text-center">
                 <p class="text-green-700 font-bold">
                     ✅ Dodano <span id="totalRecipes">0</span> przepisów!
                 </p>
             </div>
 
-            <button onclick="loadDemo()" class="w-full bg-gradient-to-r from-blue-400 to-cyan-500 text-white font-bold py-4 rounded-xl mb-6 shadow-lg">
+            <button onclick="loadDemo()"
+                class="w-full bg-gradient-to-r from-blue-400 to-cyan-500 text-white font-bold py-4 rounded-xl mb-6 shadow-lg">
                 🍳 Demo
             </button>
 
             <!-- Favorites Toggle -->
             <div class="flex gap-3 mb-6">
-                <button 
-                    id="btnRecipes" 
-                    onclick="showRecipes()" 
-                    class="flex-1 bg-purple-500 text-white font-bold py-3 rounded-xl transition-all"
-                >
+                <button id="btnRecipes" onclick="showRecipes()"
+                    class="flex-1 bg-purple-500 text-white font-bold py-3 rounded-xl transition-all">
                     📋 Przepisy (<span id="recipesTabCount">0</span>)
                 </button>
-                <button 
-                    id="btnFavorites" 
-                    onclick="showFavorites()" 
-                    class="flex-1 bg-gray-300 text-gray-700 font-bold py-3 rounded-xl transition-all"
-                >
+                <button id="btnFavorites" onclick="showFavorites()"
+                    class="flex-1 bg-gray-300 text-gray-700 font-bold py-3 rounded-xl transition-all">
                     ⭐ Ulubione (<span id="favoritesTabCount">0</span>)
                 </button>
             </div>
 
             <!-- Search & Filter (for favorites) -->
             <div id="favoritesSearch" class="hidden mb-4 space-y-3">
-                <input 
-                    type="text" 
-                    id="searchInput" 
-                    placeholder="🔍 Szukaj przepisu lub #hashtag..." 
+                <input type="text" id="searchInput" placeholder="🔍 Szukaj przepisu lub #hashtag..."
                     class="w-full p-3 border-2 border-purple-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
-                    oninput="filterFavorites()"
-                >
+                    oninput="filterFavorites()">
                 <div id="hashtagsContainer" class="flex flex-wrap gap-2"></div>
             </div>
 
-            <div id="progress" class="hidden mb-6 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl">
+            <div id="progress"
+                class="hidden mb-6 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl">
                 <div class="flex flex-col items-center gap-4">
-                    <div class="animate-spin rounded-full h-16 w-16 border-4 border-blue-600 border-t-transparent"></div>
+                    <div class="animate-spin rounded-full h-16 w-16 border-4 border-blue-600 border-t-transparent">
+                    </div>
                     <p id="progressText" class="text-blue-700 font-bold text-lg text-center"></p>
                 </div>
             </div>
@@ -92,15 +90,18 @@
 
             <div class="mb-6">
                 <div class="flex gap-3 mb-4">
-                    <h2 class="text-2xl font-bold text-gray-800 flex-1">📋 Przepisy (<span id="recipeCount">0</span>)</h2>
-                    <button onclick="clearAllRecipes()" class="bg-red-500 hover:bg-red-600 text-white font-bold px-4 py-2 rounded-lg text-sm">
+                    <h2 class="text-2xl font-bold text-gray-800 flex-1">📋 Przepisy (<span id="recipeCount">0</span>)
+                    </h2>
+                    <button onclick="clearAllRecipes()"
+                        class="bg-red-500 hover:bg-red-600 text-white font-bold px-4 py-2 rounded-lg text-sm">
                         🗑️ Wyczyść
                     </button>
                 </div>
                 <div id="recipesList" class="space-y-3"></div>
             </div>
 
-            <button id="generateBtn" onclick="generateShoppingList()" disabled class="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold py-4 rounded-xl mb-6 shadow-lg disabled:opacity-50">
+            <button id="generateBtn" onclick="generateShoppingList()" disabled
+                class="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold py-4 rounded-xl mb-6 shadow-lg disabled:opacity-50">
                 🛒 Wygeneruj Listę Zakupów
             </button>
 
@@ -109,11 +110,8 @@
                 <div>
                     <div class="flex justify-between items-center mb-4">
                         <h2 class="text-2xl font-bold text-gray-800">🛒 Lista Zakupów</h2>
-                        <button 
-                            id="copyBtn" 
-                            onclick="copyShoppingList()" 
-                            class="hidden bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-all"
-                        >
+                        <button id="copyBtn" onclick="copyShoppingList()"
+                            class="hidden bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-all">
                             <span id="copyIcon">📋</span>
                             <span id="copyText">Kopiuj</span>
                         </button>
@@ -126,7 +124,8 @@
                 <!-- Suma Makroskładników -->
                 <div>
                     <h2 class="text-2xl font-bold text-gray-800 mb-4">📊 Suma Makroskładników</h2>
-                    <div id="macrosSummary" class="bg-gradient-to-br from-orange-50 to-yellow-50 rounded-xl p-4 min-h-32">
+                    <div id="macrosSummary"
+                        class="bg-gradient-to-br from-orange-50 to-yellow-50 rounded-xl p-4 min-h-32">
                         <p class="text-center text-gray-400 py-8">Wygeneruj listę</p>
                     </div>
                 </div>
@@ -144,25 +143,25 @@
         let favorites = JSON.parse(localStorage.getItem('favorite_recipes') || '[]');
         let showingFavorites = false;
 
-        document.getElementById('imageInput').addEventListener('change', function(e) {
+        document.getElementById('imageInput').addEventListener('change', function (e) {
             const files = Array.from(e.target.files);
             if (!files.length) return;
 
             // Dodaj wszystkie pliki do kolejki
             console.log(`Dodano ${files.length} plików do kolejki`);
             processingQueue = files;
-            
+
             // Pokaż progress bar
             document.getElementById('queueProgress').classList.remove('hidden');
             updateQueueProgress(0, files.length);
-            
+
             // Rozpocznij przetwarzanie kolejki
             processQueue();
         });
 
         async function processQueue() {
             if (isProcessing || processingQueue.length === 0) return;
-            
+
             isProcessing = true;
             const totalInQueue = processingQueue.length;
             let processedCount = 0;
@@ -170,13 +169,13 @@
             while (processingQueue.length > 0) {
                 const file = processingQueue.shift();
                 processedCount++;
-                
+
                 updateQueueProgress(processedCount, totalInQueue);
                 document.getElementById('queueInfo').textContent = `Przetwarzanie: ${file.name}`;
-                
+
                 try {
                     await processImage(file);
-                    
+
                     if (processingQueue.length > 0) {
                         await new Promise(resolve => setTimeout(resolve, 500)); // Krótsza pauza
                     }
@@ -193,14 +192,14 @@
 
             isProcessing = false;
             document.getElementById('imageInput').value = ''; // Wyczyść pole plików
-            
+
             // Pokaż podsumowanie dodanych przepisów
             if (recipes.length > 0) {
-                 document.getElementById('recipesCounter').classList.remove('hidden');
-                 document.getElementById('totalRecipes').textContent = recipes.length;
-                 setTimeout(() => {
-                     document.getElementById('recipesCounter').classList.add('hidden');
-                 }, 5000);
+                document.getElementById('recipesCounter').classList.remove('hidden');
+                document.getElementById('totalRecipes').textContent = recipes.length;
+                setTimeout(() => {
+                    document.getElementById('recipesCounter').classList.add('hidden');
+                }, 5000);
             }
         }
 
@@ -231,7 +230,7 @@
 
             try {
                 showProgress('🔍 OCR...');
-                
+
                 const { data: { text } } = await Tesseract.recognize(file, 'pol+eng', {
                     logger: m => {
                         if (m.status === 'recognizing text') {
@@ -269,7 +268,7 @@
                     },
                     body: JSON.stringify({ ocrText })
                 });
-                
+
                 const result = await response.json();
 
                 if (!response.ok || !result.success) {
@@ -290,10 +289,10 @@
                     ingredients: result.ingredients,
                     macros: result.macros
                 };
-                
+
                 recipes.push(newRecipe);
                 selectedRecipes.add(newRecipe.id);
-                
+
                 hideProgress();
                 renderRecipes();
                 document.getElementById('favoritesTabCount').textContent = favorites.length;
@@ -314,35 +313,45 @@
                 return;
             }
 
-            container.innerHTML = recipes.map(r => `
-                <div onclick="toggleRecipe(${r.id})" class="p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                    selectedRecipes.has(r.id) ? 'border-purple-500 bg-purple-50 shadow-lg' : 'border-gray-200 bg-white'
-                }">
-                    <div class="flex justify-between mb-2">
-                        <h3 class="font-bold text-gray-800 flex-1">${r.title}</h3>
-                        <div class="w-6 h-6 rounded-full border-2 flex items-center justify-center ${
-                            selectedRecipes.has(r.id) ? 'bg-purple-500 border-purple-500 text-white' : 'border-gray-300'
-                        }">${selectedRecipes.has(r.id) ? '✓' : ''}</div>
-                    </div>
-                    <p class="text-sm text-gray-600">📋 ${r.ingredients.length} składników</p>
-                    ${r.macros ? `
-                        <div class="mt-3 pt-3 border-t grid grid-cols-2 gap-2 text-xs">
-                            <div class="bg-orange-100 p-2 rounded">
-                                <span class="font-bold text-orange-700">🔥 ${r.macros.calories || 0} kcal</span>
-                            </div>
-                            <div class="bg-blue-100 p-2 rounded">
-                                <span class="font-bold text-blue-700">💪 ${r.macros.protein || 0}g B</span>
-                            </div>
-                            <div class="bg-green-100 p-2 rounded">
-                                <span class="font-bold text-green-700">🍞 ${r.macros.carbs || 0}g W</span>
-                            </div>
-                            <div class="bg-yellow-100 p-2 rounded">
-                                <span class="font-bold text-yellow-700">🧈 ${r.macros.fat || 0}g T</span>
-                            </div>
-                        </div>
-                    ` : '<p class="text-xs text-gray-400 mt-2">Brak makroskładników</p>'}
+            container.innerHTML = recipes.map(r => {
+                const isFavorite = favorites.some(f => f.title === r.title);
+
+                return `
+        <div onclick="toggleRecipe(${r.id})" class="p-4 rounded-xl border-2 cursor-pointer transition-all ${selectedRecipes.has(r.id) ? 'border-purple-500 bg-purple-50 shadow-lg' : 'border-gray-200 bg-white'
+                    }">
+            <div class="flex justify-between items-start mb-2">
+                <h3 class="font-bold text-gray-800 flex-1">${r.title}</h3>
+                <div class="flex items-center gap-2">
+                    <button 
+                        onclick="toggleFavorite(${r.id}); event.stopPropagation();" 
+                        class="text-2xl hover:scale-110 transition-transform"
+                        title="${isFavorite ? 'Usuń z ulubionych' : 'Dodaj do ulubionych'}"
+                    >
+                        ${isFavorite ? '⭐' : '☆'}
+                    </button>
+                    <div class="w-6 h-6 rounded-full border-2 flex items-center justify-center ${selectedRecipes.has(r.id) ? 'bg-purple-500 border-purple-500 text-white' : 'border-gray-300'
+                    }">${selectedRecipes.has(r.id) ? '✓' : ''}</div>
                 </div>
-            `).join('');
+            </div>
+            <p class="text-sm text-gray-600">📋 ${r.ingredients.length} składników</p>
+            ${r.macros ? `
+                <div class="mt-3 pt-3 border-t grid grid-cols-2 gap-2 text-xs">
+                    <div class="bg-orange-100 p-2 rounded">
+                        <span class="font-bold text-orange-700">🔥 ${r.macros.calories || 0} kcal</span>
+                    </div>
+                    <div class="bg-blue-100 p-2 rounded">
+                        <span class="font-bold text-blue-700">💪 ${r.macros.protein || 0}g B</span>
+                    </div>
+                    <div class="bg-green-100 p-2 rounded">
+                        <span class="font-bold text-green-700">🍞 ${r.macros.carbs || 0}g W</span>
+                    </div>
+                    <div class="bg-yellow-100 p-2 rounded">
+                        <span class="font-bold text-yellow-700">🧈 ${r.macros.fat || 0}g T</span>
+                    </div>
+                </div>
+            ` : '<p class="text-xs text-gray-400 mt-2">Brak makroskładników</p>'}
+        </div>
+    `}).join('');
 
             document.getElementById('generateBtn').disabled = !selectedRecipes.size;
         }
@@ -363,18 +372,18 @@
                 r.ingredients.forEach(ing => {
                     const norm = ing.toLowerCase().trim();
                     let found = false;
-                    
+
                     for (let [key, count] of map.entries()) {
                         const base1 = key.toLowerCase().replace(/\d+\s*(g|ml|kg|szt)/gi, '').trim();
                         const base2 = norm.replace(/\d+\s*(g|ml|kg|szt)/gi, '').trim();
-                        
+
                         if (base1 === base2 || base1.includes(base2) || base2.includes(base1)) {
                             map.set(key, count + 1);
                             found = true;
                             break;
                         }
                     }
-                    
+
                     if (!found) map.set(ing, 1);
                 });
             });
@@ -405,12 +414,10 @@
             container.innerHTML = `
                 <div class="space-y-2">
                     ${shoppingList.map(item => `
-                        <div class="flex items-center gap-3 p-3 rounded-lg ${
-                            item.checked ? 'bg-green-100 text-green-800 line-through' : 'bg-white'
-                        } shadow-md">
-                            <button onclick="toggleItem(${item.id})" class="w-6 h-6 rounded border-2 flex items-center justify-center ${
-                                item.checked ? 'bg-green-500 border-green-500 text-white' : 'border-gray-400'
-                            }">${item.checked ? '✓' : ''}</button>
+                        <div class="flex items-center gap-3 p-3 rounded-lg ${item.checked ? 'bg-green-100 text-green-800 line-through' : 'bg-white'
+                } shadow-md">
+                            <button onclick="toggleItem(${item.id})" class="w-6 h-6 rounded border-2 flex items-center justify-center ${item.checked ? 'bg-green-500 border-green-500 text-white' : 'border-gray-400'
+                }">${item.checked ? '✓' : ''}</button>
                             <span class="flex-1">${item.name}</span>
                         </div>
                     `).join('')}
@@ -424,24 +431,24 @@
         async function copyShoppingList() {
             try {
                 let text = '🛒 LISTA ZAKUPÓW\n═══════════════════════\n\n';
-                
+
                 const unchecked = shoppingList.filter(i => !i.checked);
                 const checked = shoppingList.filter(i => i.checked);
-                
+
                 if (unchecked.length > 0) {
                     text += '📋 DO KUPIENIA:\n';
                     unchecked.forEach((item, i) => { text += `${i + 1}. ${item.name}\n`; });
                     text += '\n';
                 }
-                
+
                 if (checked.length > 0) {
                     text += '✅ KUPIONE:\n';
                     checked.forEach((item, i) => { text += `${i + 1}. ${item.name}\n`; });
                     text += '\n';
                 }
-                
+
                 text += `───────────────────────\nRazem: ${shoppingList.length} produktów\n\n`;
-                
+
                 const total = { calories: 0, protein: 0, carbs: 0, fat: 0 };
                 let hasAny = false;
 
@@ -462,25 +469,25 @@
                     text += `🍞 Węglowodany: ${total.carbs}g\n`;
                     text += `🧈 Tłuszcze: ${total.fat}g\n\n`;
                 }
-                
+
                 text += `───────────────────────\nWygenerowano: ${new Date().toLocaleString('pl-PL')}\nLista Zakupów AI 🤖\n`;
-                
+
                 await navigator.clipboard.writeText(text);
-                
+
                 const copyIcon = document.getElementById('copyIcon');
                 const copyText = document.getElementById('copyText');
                 const copyBtn = document.getElementById('copyBtn');
-                
+
                 copyIcon.textContent = '✅';
                 copyText.textContent = 'Skopiowano!';
                 copyBtn.classList.replace('bg-indigo-500', 'bg-green-500');
-                
+
                 setTimeout(() => {
                     copyIcon.textContent = '📋';
                     copyText.textContent = 'Kopiuj';
                     copyBtn.classList.replace('bg-green-500', 'bg-indigo-500');
                 }, 2000);
-                
+
             } catch (error) {
                 console.error('Błąd kopiowania:', error);
                 alert('❌ Nie udało się skopiować.');
@@ -489,7 +496,7 @@
 
         function renderMacrosSummary() {
             const container = document.getElementById('macrosSummary');
-            
+
             const total = { calories: 0, protein: 0, carbs: 0, fat: 0 };
             let hasAny = false;
 
@@ -550,16 +557,16 @@
             if (!recipe) return;
 
             const existingIndex = favorites.findIndex(f => f.title === recipe.title);
-            
+
             if (existingIndex >= 0) {
                 favorites.splice(existingIndex, 1);
             } else {
                 const name = prompt('Nazwa przepisu:', recipe.title);
                 if (!name) return;
-                
+
                 const tags = prompt('Dodaj hashtagi (oddziel spacjami):\nPrzykład: #śniadanie #fit #szybkie', '');
                 const hashtagsArray = tags ? tags.match(/#\w+/g) || [] : [];
-                
+
                 favorites.push({
                     title: name,
                     ingredients: recipe.ingredients,
@@ -568,7 +575,7 @@
                     savedAt: new Date().toISOString()
                 });
             }
-            
+
             saveFavorites();
             renderRecipes();
             if (showingFavorites) renderFavorites();
@@ -692,10 +699,10 @@
             const fav = favorites[index];
             const newName = prompt('Nowa nazwa przepisu:', fav.title);
             if (newName) fav.title = newName;
-            
+
             const newTags = prompt('Hashtagi (oddziel spacjami):', (fav.hashtags || []).join(' '));
             if (newTags !== null) fav.hashtags = newTags.match(/#\w+/g) || [];
-            
+
             saveFavorites();
             renderFavorites();
             renderHashtagFilter();
@@ -726,8 +733,8 @@
                 return;
             }
             recipes = [
-                { id: 1, title: "Spaghetti Bolognese", ingredients: ["500g makaronu spaghetti", "300g mielonej wołowiny", "1 puszka pomidorów", "1 cebula", "2 ząbki czosnku", "oliwa", "sól", "pieprz"], macros: { calories: 650, protein: 35, carbs: 75, fat: 18 }},
-                { id: 2, title: "Kurczak curry z ryżem", ingredients: ["600g piersi z kurczaka", "300g ryżu basmati", "400ml mleka kokosowego", "1 łyżka pasty curry", "1 papryka", "1 cebula", "świeża kolendra"], macros: { calories: 520, protein: 45, carbs: 52, fat: 12 }}
+                { id: 1, title: "Spaghetti Bolognese", ingredients: ["500g makaronu spaghetti", "300g mielonej wołowiny", "1 puszka pomidorów", "1 cebula", "2 ząbki czosnku", "oliwa", "sól", "pieprz"], macros: { calories: 650, protein: 35, carbs: 75, fat: 18 } },
+                { id: 2, title: "Kurczak curry z ryżem", ingredients: ["600g piersi z kurczaka", "300g ryżu basmati", "400ml mleka kokosowego", "1 łyżka pasty curry", "1 papryka", "1 cebula", "świeża kolendra"], macros: { calories: 520, protein: 45, carbs: 52, fat: 12 } }
             ];
             selectedRecipes.clear();
             recipes.forEach(r => selectedRecipes.add(r.id));
@@ -741,4 +748,5 @@
         showRecipes(); // Pokaż zakładkę przepisów jako domyślną
     </script>
 </body>
+
 </html>
