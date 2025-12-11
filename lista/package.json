@@ -1,5 +1,9 @@
 {
   "name": "lista-zakupow-ai",
   "version": "1.0.0",
-  "description": "Lista zakupów AI z OCR, GPT-4 i ulubionym"
+  "description": "Lista zakupów AI z OCR, GPT-4 i ulubionym",
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }
