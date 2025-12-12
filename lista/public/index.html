@@ -306,6 +306,7 @@
         function renderRecipes() {
             const container = document.getElementById('recipesList');
             document.getElementById('recipeCount').textContent = recipes.length;
+            document.getElementById('recipesTabCount').textContent = recipes.length;
 
             if (!recipes.length) {
                 container.innerHTML = '<p class="text-center text-gray-400 py-8">Brak przepisów</p>';
@@ -612,6 +613,7 @@
             const list = filtered || favorites;
 
             document.getElementById('recipeCount').textContent = list.length;
+            document.getElementById('favoritesTabCount').textContent = favorites.length;
 
             if (!list.length) {
                 container.innerHTML = '<p class="text-center text-gray-400 py-8">Brak ulubionych przepisów</p>';
