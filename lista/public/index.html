@@ -72,6 +72,19 @@
                     class="w-full p-3 border-2 border-purple-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
                     oninput="filterFavorites()">
                 <div id="hashtagsContainer" class="flex flex-wrap gap-2"></div>
+                
+                <!-- Export/Import Buttons -->
+                <div class="flex gap-2 pt-2 border-t border-purple-200">
+                    <button onclick="exportFavorites()" 
+                        class="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-all flex items-center justify-center gap-2">
+                        📥 Eksportuj ulubione
+                    </button>
+                    <button onclick="document.getElementById('importFile').click()" 
+                        class="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-all flex items-center justify-center gap-2">
+                        📤 Importuj ulubione
+                    </button>
+                    <input type="file" id="importFile" accept=".json" class="hidden" onchange="importFavorites(event)">
+                </div>
             </div>
 
             <div id="progress"
@@ -717,6 +730,65 @@
                 renderFavorites();
                 renderHashtagFilter();
             }
+        }
+
+        function exportFavorites() {
+            if (favorites.length === 0) {
+                alert('❌ Brak ulubionych do eksportu!');
+                return;
+            }
+
+            const dataStr = JSON.stringify(favorites, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `ulubione-przepisy-${new Date().toISOString().split('T')[0]}.json`;
+            link.click();
+            URL.revokeObjectURL(url);
+
+            alert(`✅ Wyeksportowano ${favorites.length} przepisów!`);
+        }
+
+        function importFavorites(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const imported = JSON.parse(e.target.result);
+                    
+                    if (!Array.isArray(imported)) {
+                        alert('❌ Nieprawidłowy format pliku!');
+                        return;
+                    }
+
+                    let added = 0;
+                    let skipped = 0;
+
+                    imported.forEach(recipe => {
+                        const exists = favorites.some(f => f.title === recipe.title);
+                        if (!exists) {
+                            favorites.push(recipe);
+                            added++;
+                        } else {
+                            skipped++;
+                        }
+                    });
+
+                    saveFavorites();
+                    renderFavorites();
+                    renderHashtagFilter();
+
+                    alert(`✅ Zaimportowano ${added} przepisów!\n${skipped > 0 ? `⚠️ Pominięto ${skipped} duplikatów.` : ''}`);
+
+                } catch (error) {
+                    alert('❌ Błąd przy wczytywaniu pliku!\n' + error.message);
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = '';
         }
 
         function clearAllRecipes() {
