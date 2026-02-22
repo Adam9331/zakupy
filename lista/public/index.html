@@ -713,6 +713,10 @@
         }
 
         window.goHome = function() { renderHome(); };
+
+        // INIT
+        renderHome();
+
         function showProgress(text) { const el=document.getElementById("progress"); if(el) el.classList.remove("hidden"); const t=document.getElementById("progressText"); if(t) t.textContent=text; const err=document.getElementById("errorBox"); if(err) err.classList.add("hidden"); }
         function hideProgress() { const el=document.getElementById("progress"); if(el) el.classList.add("hidden"); }
         function showError(text) { const el=document.getElementById("errorBox"); if(el) el.classList.remove("hidden"); const t=document.getElementById("errorText"); if(t) t.textContent=text; hideProgress(); }
