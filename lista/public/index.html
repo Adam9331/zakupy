@@ -23,39 +23,115 @@
         const db = getFirestore(app);
 
         const CATEGORIES = [
-            { id: "sniadania",         label: "Śniadania",         emoji: "🌅", color: "from-amber-400 to-orange-500",   light: "bg-amber-50 border-amber-200",   badge: "bg-amber-100 text-amber-700" },
-            { id: "drugie_sniadania",  label: "Drugie Śniadania",  emoji: "🥪", color: "from-lime-400 to-green-500",    light: "bg-lime-50 border-lime-200",     badge: "bg-lime-100 text-lime-700" },
-            { id: "obiady",            label: "Obiady",            emoji: "🍲", color: "from-blue-400 to-indigo-500",   light: "bg-blue-50 border-blue-200",     badge: "bg-blue-100 text-blue-700" },
-            { id: "kolacje",           label: "Kolacje",           emoji: "🌙", color: "from-purple-400 to-pink-500",   light: "bg-purple-50 border-purple-200", badge: "bg-purple-100 text-purple-700" },
-            { id: "dodatkowy_posilek", label: "Dodatkowy Posiłek", emoji: "🍎", color: "from-rose-400 to-red-500",      light: "bg-rose-50 border-rose-200",     badge: "bg-rose-100 text-rose-700" },
+            { id: "sniadania",         label: "Śniadania",         emoji: "🌅", color: "from-amber-400 to-orange-500",   light: "bg-amber-50 border-amber-200" },
+            { id: "drugie_sniadania",  label: "Drugie Śniadania",  emoji: "🥪", color: "from-lime-400 to-green-500",    light: "bg-lime-50 border-lime-200" },
+            { id: "obiady",            label: "Obiady",            emoji: "🍲", color: "from-blue-400 to-indigo-500",   light: "bg-blue-50 border-blue-200" },
+            { id: "kolacje",           label: "Kolacje",           emoji: "🌙", color: "from-purple-400 to-pink-500",   light: "bg-purple-50 border-purple-200" },
+            { id: "dodatkowy_posilek", label: "Dodatkowy Posiłek", emoji: "🍎", color: "from-rose-400 to-red-500",      light: "bg-rose-50 border-rose-200" },
         ];
 
         let cart = [];
         let currentCategory = null;
         let categoryRecipes = [];
         let localSelected = new Set();
-        // mapa firebaseId -> dostosowane kcal (tymczasowo)
         let customKcal = {};
         let isProcessing = false;
         let processingQueue = [];
         let recipeIdCounter = 1;
 
-        window.addEventListener("DOMContentLoaded", () => { renderHome(); });
+        // ── LICZNIK KALORII ───────────────────────────────────
+        let dailyLimit = parseInt(localStorage.getItem('dailyKcalLimit') || '2500');
 
-        // ── SKALOWANIE PRZEPISU ───────────────────────────────
+        function getCartKcal() {
+            return cart.reduce((sum, r) => sum + (r.macros?.calories || 0), 0);
+        }
+
+        function getRemaining() {
+            return dailyLimit - getCartKcal();
+        }
+
+        function getProgressPct() {
+            return Math.min(100, Math.round((getCartKcal() / dailyLimit) * 100));
+        }
+
+        function getProgressColor() {
+            const pct = getProgressPct();
+            if (pct >= 100) return { bar: 'bg-red-500', text: 'text-red-600', bg: 'bg-red-50 border-red-300' };
+            if (pct >= 80)  return { bar: 'bg-orange-400', text: 'text-orange-600', bg: 'bg-orange-50 border-orange-300' };
+            return { bar: 'bg-green-500', text: 'text-green-600', bg: 'bg-green-50 border-green-300' };
+        }
+
+        function renderKcalCounter() {
+            const used = getCartKcal();
+            const remaining = getRemaining();
+            const pct = getProgressPct();
+            const col = getProgressColor();
+            const over = remaining < 0;
+
+            return `
+            <div class="mb-5 p-4 ${col.bg} border-2 rounded-2xl">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2">
+                        <span class="text-2xl">🔥</span>
+                        <div>
+                            <p class="font-black text-gray-800 text-base">Licznik Kalorii</p>
+                            <p class="text-xs text-gray-500">Limit dzienny: <button onclick="window.changeDailyLimit()" class="font-bold underline hover:no-underline ${col.text}">${dailyLimit} kcal</button></p>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-2xl font-black ${col.text}">${over ? '+' + Math.abs(remaining) : remaining}</p>
+                        <p class="text-xs text-gray-500">${over ? 'kcal ponad limit' : 'kcal pozostało'}</p>
+                    </div>
+                </div>
+
+                <!-- Progress bar -->
+                <div class="w-full bg-gray-200 rounded-full h-4 overflow-hidden mb-2">
+                    <div class="${col.bar} h-4 rounded-full transition-all duration-500" style="width: ${pct}%"></div>
+                </div>
+
+                <div class="flex justify-between text-xs text-gray-500">
+                    <span>Zjedzone: <span class="font-bold ${col.text}">${used} kcal</span></span>
+                    <span>${pct}% dziennego limitu</span>
+                    <span>Limit: <span class="font-bold">${dailyLimit} kcal</span></span>
+                </div>
+
+                ${over ? `<div class="mt-2 text-xs font-bold text-red-600 bg-red-100 px-3 py-1.5 rounded-lg text-center">⚠️ Przekroczono limit o ${Math.abs(remaining)} kcal!</div>` : ''}
+                ${cart.length > 0 ? `
+                <div class="mt-2 pt-2 border-t border-gray-200 space-y-1">
+                    ${cart.map(r => {
+                        const cat = CATEGORIES.find(c => c.id === r.categoryId);
+                        const kcal = r.macros?.calories || 0;
+                        if (!kcal) return '';
+                        return `<div class="flex justify-between text-xs text-gray-600">
+                            <span>${cat?.emoji} ${r.title}${r._scaled ? ' ⚡' : ''}</span>
+                            <span class="font-bold">${kcal} kcal</span>
+                        </div>`;
+                    }).filter(Boolean).join('')}
+                </div>` : ''}
+            </div>`;
+        }
+
+        window.changeDailyLimit = function() {
+            const input = prompt('Podaj dzienny limit kalorii:', dailyLimit);
+            if (input === null) return;
+            const val = parseInt(input);
+            if (isNaN(val) || val <= 0) { alert('Podaj prawidłową liczbę!'); return; }
+            dailyLimit = val;
+            localStorage.setItem('dailyKcalLimit', val);
+            renderHome();
+        };
+
+        // ── SKALOWANIE ────────────────────────────────────────
         function scaleRecipe(recipe, targetKcal) {
             if (!recipe.macros?.calories || recipe.macros.calories === 0) return recipe;
             const ratio = targetKcal / recipe.macros.calories;
-
-            // Skaluj składniki — znajdź liczby i pomnóż
-            const scaledIngredients = recipe.ingredients.map(ing => {
-                return ing.replace(/(\d+(?:[.,]\d+)?)/g, (match) => {
+            const scaledIngredients = recipe.ingredients.map(ing =>
+                ing.replace(/(\d+(?:[.,]\d+)?)/g, (match) => {
                     const num = parseFloat(match.replace(',', '.'));
                     const scaled = Math.round(num * ratio * 10) / 10;
                     return String(scaled).replace('.', ',');
-                });
-            });
-
+                })
+            );
             return {
                 ...recipe,
                 ingredients: scaledIngredients,
@@ -81,12 +157,16 @@
 
             document.getElementById("app").innerHTML = `
                 <div class="max-w-2xl mx-auto p-4 pb-10">
-                    <div class="text-center mb-6 pt-6">
-                        <div class="text-5xl mb-2">🛒</div>
+                    <div class="text-center mb-5 pt-5">
+                        <div class="text-4xl mb-1">🛒</div>
                         <h1 class="text-3xl font-black text-gray-800 tracking-tight">Lista Zakupów AI</h1>
                         <p class="text-gray-500 mt-1 text-sm">Wybierz przepisy z kategorii, potem wygeneruj listę</p>
                     </div>
 
+                    <!-- LICZNIK KALORII -->
+                    ${renderKcalCounter()}
+
+                    <!-- KOSZYK -->
                     <div id="cartBanner" class="${cart.length ? '' : 'hidden'} mb-5 p-4 bg-green-50 border-2 border-green-300 rounded-2xl">
                         <div class="flex items-center justify-between mb-2">
                             <p class="font-black text-green-800">🧺 Koszyk: ${cart.length} przepisów</p>
@@ -99,7 +179,7 @@
                         <div class="space-y-1">
                             ${cart.map(r => {
                                 const cat = CATEGORIES.find(c => c.id === r.categoryId);
-                                const kcalInfo = r._scaled ? ` <span class="text-orange-500 font-bold">(${r._targetKcal} kcal ⚡)</span>` : '';
+                                const kcalInfo = r._scaled ? ` <span class="text-orange-500 font-bold">(⚡${r._targetKcal} kcal)</span>` : (r.macros?.calories ? ` <span class="text-gray-400">(${r.macros.calories} kcal)</span>` : '');
                                 return `<div class="flex items-center justify-between text-sm py-0.5">
                                     <span class="text-green-700">${cat?.emoji || ''} <span class="font-semibold">${r.title}</span>${kcalInfo}</span>
                                     <button onclick="window.removeFromCart('${r.firebaseId}')" class="text-red-400 hover:text-red-600 text-xs ml-2 font-bold">✕</button>
@@ -108,9 +188,11 @@
                         </div>
                     </div>
 
+                    <!-- KATEGORIE -->
                     <div class="grid grid-cols-1 gap-3 mb-5">
                         ${CATEGORIES.map(cat => {
                             const inCart = cart.filter(r => r.categoryId === cat.id).length;
+                            const catKcal = cart.filter(r => r.categoryId === cat.id).reduce((s,r) => s+(r.macros?.calories||0),0);
                             return `<button onclick="window.openCategory('${cat.id}')"
                                 class="group relative overflow-hidden bg-gradient-to-r ${cat.color} text-white font-bold py-5 px-6 rounded-2xl shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-150 text-left">
                                 <div class="flex items-center gap-4">
@@ -119,7 +201,7 @@
                                         <div class="text-lg font-black">${cat.label}</div>
                                         <div class="text-xs opacity-75 font-normal" id="count-${cat.id}">Ładowanie...</div>
                                     </div>
-                                    ${inCart > 0 ? `<div class="bg-white text-green-600 font-black text-sm px-3 py-1 rounded-full">${inCart} ✓</div>` : ''}
+                                    ${inCart > 0 ? `<div class="bg-white text-green-600 font-black text-xs px-2 py-1 rounded-full text-center"><div>${inCart} ✓</div><div>${catKcal} kcal</div></div>` : ''}
                                 </div>
                                 <div class="absolute right-5 top-1/2 -translate-y-1/2 text-3xl opacity-30 group-hover:opacity-60 transition-opacity">›</div>
                             </button>`;
@@ -129,7 +211,7 @@
                     ${cart.length ? `
                     <button onclick="window.goToResults()"
                         class="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black py-5 rounded-2xl shadow-xl text-lg hover:opacity-90 transition-all">
-                        🛒 Generuj listę zakupów (${cart.length} przepisów)
+                        🛒 Generuj listę zakupów (${cart.length} przepisów · ${getCartKcal()} kcal)
                     </button>` : `
                     <div class="text-center text-gray-400 py-6 border-2 border-dashed border-gray-200 rounded-2xl">
                         <p class="text-sm">Wejdź w kategorię → zaznacz przepisy → dodaj do koszyka</p>
@@ -171,10 +253,35 @@
             const el = document.getElementById("cartBadge");
             if (!el) return;
             const count = cart.length;
-            el.textContent = count > 0 ? "🧺 " + count + " w koszyku" : "🧺 Koszyk pusty";
+            const kcal = getCartKcal();
+            el.textContent = count > 0 ? "🧺 " + count + " · " + kcal + " kcal" : "🧺 Koszyk pusty";
             el.className = count > 0
                 ? "text-sm font-bold text-green-700 bg-green-100 px-3 py-1 rounded-full"
                 : "text-sm font-bold text-gray-400 bg-gray-100 px-3 py-1 rounded-full";
+        }
+
+        // Mini licznik w widoku kategorii
+        function renderMiniCounter() {
+            const used = getCartKcal();
+            const remaining = getRemaining();
+            const pct = getProgressPct();
+            const col = getProgressColor();
+            const over = remaining < 0;
+            const el = document.getElementById("miniCounter");
+            if (!el) return;
+            el.innerHTML = `
+                <div class="flex items-center gap-3">
+                    <div class="flex-1">
+                        <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                            <div class="${col.bar} h-2 rounded-full transition-all duration-500" style="width:${pct}%"></div>
+                        </div>
+                    </div>
+                    <div class="text-xs font-bold ${col.text} whitespace-nowrap">
+                        🔥 ${used}/${dailyLimit} kcal
+                        ${over ? '<span class="text-red-500"> ⚠️</span>' : ''}
+                    </div>
+                </div>
+            `;
         }
 
         // ── DOSTOSUJ KCAL ─────────────────────────────────────
@@ -182,31 +289,25 @@
             event.stopPropagation();
             const recipe = categoryRecipes.find(r => r.firebaseId === firebaseId);
             if (!recipe) return;
-            if (!recipe.macros?.calories) {
-                alert("Ten przepis nie ma danych o kaloriach — nie można skalować.");
-                return;
-            }
+            if (!recipe.macros?.calories) { alert("Brak danych o kaloriach — nie można skalować."); return; }
 
             const currentKcal = customKcal[firebaseId] || recipe.macros.calories;
+            const remaining = getRemaining();
+            const suggestion = isInCart(firebaseId)
+                ? Math.max(50, currentKcal + remaining)
+                : Math.max(50, currentKcal + remaining);
+
             const input = prompt(
-                `⚡ Dostosuj kalorie dla:\n"${recipe.title}"\n\nObecnie: ${recipe.macros.calories} kcal (oryginał)\nAktualnie ustawione: ${currentKcal} kcal\n\nPodaj docelową liczbę kalorii:`,
-                currentKcal
+                `⚡ Dostosuj kalorie:\n"${recipe.title}"\n\nOryginał: ${recipe.macros.calories} kcal\nAktualnie: ${currentKcal} kcal\nPozostało w limicie: ${remaining} kcal\n\nPodaj docelowe kalorie:`,
+                customKcal[firebaseId] || recipe.macros.calories
             );
-
-            if (input === null) return; // anulowano
+            if (input === null) return;
             const targetKcal = parseInt(input);
-            if (isNaN(targetKcal) || targetKcal <= 0) {
-                alert("Podaj prawidłową liczbę kalorii!");
-                return;
-            }
+            if (isNaN(targetKcal) || targetKcal <= 0) { alert("Podaj prawidłową liczbę!"); return; }
 
-            if (targetKcal === recipe.macros.calories) {
-                delete customKcal[firebaseId];
-            } else {
-                customKcal[firebaseId] = targetKcal;
-            }
+            if (targetKcal === recipe.macros.calories) delete customKcal[firebaseId];
+            else customKcal[firebaseId] = targetKcal;
 
-            // Jeśli przepis jest już w koszyku — zaktualizuj go
             if (isInCart(firebaseId)) {
                 const idx = cart.findIndex(r => r.firebaseId === firebaseId);
                 if (idx >= 0) {
@@ -214,8 +315,9 @@
                     cart[idx] = { ...scaled, categoryId: currentCategory.id };
                 }
             }
-
             renderCategoryRecipes();
+            updateCategoryCartBadge();
+            renderMiniCounter();
         };
 
         // ── WIDOK KATEGORII ───────────────────────────────────
@@ -227,7 +329,7 @@
 
             document.getElementById("app").innerHTML = `
                 <div class="max-w-2xl mx-auto p-4 pb-28">
-                    <div class="flex items-center gap-3 mb-4 pt-4">
+                    <div class="flex items-center gap-3 mb-3 pt-4">
                         <button onclick="window.goHome()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-xl text-sm">← Wróć</button>
                         <div class="flex-1">
                             <h2 class="text-xl font-black text-gray-800">${currentCategory.emoji} ${currentCategory.label}</h2>
@@ -235,7 +337,10 @@
                         <span id="cartBadge" class="text-sm font-bold text-gray-400 bg-gray-100 px-3 py-1 rounded-full">🧺 Koszyk pusty</span>
                     </div>
 
-                    <div class="mb-5">
+                    <!-- Mini licznik kalorii -->
+                    <div id="miniCounter" class="mb-4 p-3 bg-white border border-gray-200 rounded-xl shadow-sm"></div>
+
+                    <div class="mb-4">
                         <label for="imageInput" class="block w-full bg-gradient-to-r ${currentCategory.color} text-white font-bold py-4 px-6 rounded-xl text-center cursor-pointer shadow-md hover:opacity-90 transition-all">
                             <span class="text-xl mr-2">📸</span> Dodaj screenshot(y) do bazy
                             <p class="text-xs mt-1 opacity-80">Możesz wybrać wiele plików naraz!</p>
@@ -264,7 +369,7 @@
                     </div>
 
                     <div class="mb-3 flex items-center justify-between">
-                        <h3 class="text-sm font-bold text-gray-500">Zaznacz przepisy → dodaj do koszyka</h3>
+                        <h3 class="text-sm font-bold text-gray-500">Zaznacz → dodaj do koszyka</h3>
                         <span id="recipeCount" class="bg-gray-100 text-gray-500 px-3 py-1 rounded-full text-xs font-bold">0</span>
                     </div>
 
@@ -296,6 +401,7 @@
             });
 
             updateCategoryCartBadge();
+            renderMiniCounter();
             await loadCategoryRecipes();
         };
 
@@ -305,9 +411,7 @@
                 const snap = await getDocs(q);
                 categoryRecipes = snap.docs.map(d => ({ firebaseId: d.id, ...d.data() }));
                 renderCategoryRecipes();
-            } catch(e) {
-                showError("Błąd ładowania: " + e.message);
-            }
+            } catch(e) { showError("Błąd ładowania: " + e.message); }
         }
 
         function renderCategoryRecipes() {
@@ -316,21 +420,12 @@
             const stickyBar = document.getElementById("stickyBar");
             const selCount = document.getElementById("selectedCount");
             if (!container) return;
-
             if (countEl) countEl.textContent = categoryRecipes.length;
-            if (stickyBar) {
-                if (localSelected.size > 0) stickyBar.classList.remove("hidden");
-                else stickyBar.classList.add("hidden");
-            }
+            if (stickyBar) { if (localSelected.size > 0) stickyBar.classList.remove("hidden"); else stickyBar.classList.add("hidden"); }
             if (selCount) selCount.textContent = localSelected.size;
 
             if (!categoryRecipes.length) {
-                container.innerHTML = `
-                    <div class="text-center text-gray-400 py-10 border-2 border-dashed border-gray-200 rounded-xl">
-                        <div class="text-4xl mb-3">📭</div>
-                        <p class="font-bold text-sm">Brak przepisów</p>
-                        <p class="text-xs mt-1">Dodaj screenshoty powyżej!</p>
-                    </div>`;
+                container.innerHTML = `<div class="text-center text-gray-400 py-10 border-2 border-dashed border-gray-200 rounded-xl"><div class="text-4xl mb-3">📭</div><p class="font-bold text-sm">Brak przepisów</p><p class="text-xs mt-1">Dodaj screenshoty powyżej!</p></div>`;
                 return;
             }
 
@@ -340,14 +435,10 @@
                 const targetKcal = customKcal[r.firebaseId];
                 const displayRecipe = targetKcal ? scaleRecipe(r, targetKcal) : r;
                 const hasKcal = !!r.macros?.calories;
+                const remaining = getRemaining();
 
                 return `
-                <div class="rounded-xl border-2 overflow-hidden transition-all ${
-                    inCart   ? 'border-green-400 bg-green-50' :
-                    selected ? 'border-indigo-400 bg-indigo-50 shadow-md' :
-                               'border-gray-200 bg-white hover:border-gray-300'
-                }">
-                    <!-- Górna część — klikalny obszar zaznaczenia -->
+                <div class="rounded-xl border-2 overflow-hidden transition-all ${inCart ? 'border-green-400 bg-green-50' : selected ? 'border-indigo-400 bg-indigo-50 shadow-md' : 'border-gray-200 bg-white hover:border-gray-300'}">
                     <div onclick="window.toggleLocalSelect('${r.firebaseId}')" class="p-4 cursor-pointer">
                         <div class="flex justify-between items-start">
                             <div class="flex-1 pr-2">
@@ -360,46 +451,22 @@
                             </div>
                             <div class="flex items-center gap-2 flex-shrink-0">
                                 <button onclick="window.deleteRecipe('${r.firebaseId}', event)" class="text-red-300 hover:text-red-500 transition-colors" title="Usuń z bazy">🗑️</button>
-                                <div class="w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold ${
-                                    inCart   ? 'bg-green-500 border-green-500 text-white' :
-                                    selected ? 'bg-indigo-500 border-indigo-500 text-white' :
-                                               'border-gray-300'
-                                }">${inCart || selected ? '✓' : ''}</div>
+                                <div class="w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold ${inCart ? 'bg-green-500 border-green-500 text-white' : selected ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-gray-300'}">${inCart || selected ? '✓' : ''}</div>
                             </div>
                         </div>
-
                         ${displayRecipe.macros ? `
                             <div class="mt-2 pt-2 border-t grid grid-cols-4 gap-1 text-xs">
-                                <div class="bg-orange-100 p-1.5 rounded text-center">
-                                    <div class="font-bold text-orange-700">${displayRecipe.macros.calories||0}</div>
-                                    <div class="text-orange-500">kcal</div>
-                                </div>
-                                <div class="bg-blue-100 p-1.5 rounded text-center">
-                                    <div class="font-bold text-blue-700">${displayRecipe.macros.protein||0}g</div>
-                                    <div class="text-blue-500">B</div>
-                                </div>
-                                <div class="bg-green-100 p-1.5 rounded text-center">
-                                    <div class="font-bold text-green-700">${displayRecipe.macros.carbs||0}g</div>
-                                    <div class="text-green-500">W</div>
-                                </div>
-                                <div class="bg-yellow-100 p-1.5 rounded text-center">
-                                    <div class="font-bold text-yellow-700">${displayRecipe.macros.fat||0}g</div>
-                                    <div class="text-yellow-500">T</div>
-                                </div>
-                            </div>
-                        ` : ''}
+                                <div class="bg-orange-100 p-1.5 rounded text-center"><div class="font-bold text-orange-700">${displayRecipe.macros.calories||0}</div><div class="text-orange-500">kcal</div></div>
+                                <div class="bg-blue-100 p-1.5 rounded text-center"><div class="font-bold text-blue-700">${displayRecipe.macros.protein||0}g</div><div class="text-blue-500">B</div></div>
+                                <div class="bg-green-100 p-1.5 rounded text-center"><div class="font-bold text-green-700">${displayRecipe.macros.carbs||0}g</div><div class="text-green-500">W</div></div>
+                                <div class="bg-yellow-100 p-1.5 rounded text-center"><div class="font-bold text-yellow-700">${displayRecipe.macros.fat||0}g</div><div class="text-yellow-500">T</div></div>
+                            </div>` : ''}
                     </div>
-
-                    <!-- Dolna część — przycisk dostosuj kcal -->
                     ${hasKcal ? `
-                    <div class="px-4 pb-3 pt-0">
+                    <div class="px-4 pb-3">
                         <button onclick="window.adjustKcal('${r.firebaseId}', event)"
-                            class="w-full text-xs font-bold py-2 px-3 rounded-lg transition-all ${
-                                targetKcal
-                                    ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
-                                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                            }">
-                            ⚡ ${targetKcal ? `Zmień kalorie (${r.macros.calories} kcal → ${targetKcal} kcal)` : `Dostosuj kalorie (${r.macros.calories} kcal)`}
+                            class="w-full text-xs font-bold py-2 px-3 rounded-lg transition-all ${targetKcal ? 'bg-orange-100 text-orange-700 hover:bg-orange-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}">
+                            ⚡ ${targetKcal ? `Zmień (${r.macros.calories} → ${targetKcal} kcal)` : `Dostosuj kalorie (${r.macros.calories} kcal) · zostało ${remaining} kcal`}
                         </button>
                     </div>` : ''}
                 </div>`;
@@ -410,6 +477,7 @@
             if (isInCart(firebaseId)) {
                 cart = cart.filter(r => r.firebaseId !== firebaseId);
                 updateCategoryCartBadge();
+                renderMiniCounter();
                 renderCategoryRecipes();
                 return;
             }
@@ -431,6 +499,7 @@
             localSelected.clear();
             renderCategoryRecipes();
             updateCategoryCartBadge();
+            renderMiniCounter();
         };
 
         window.deleteRecipe = async function(firebaseId, event) {
@@ -444,6 +513,7 @@
                 delete customKcal[firebaseId];
                 renderCategoryRecipes();
                 updateCategoryCartBadge();
+                renderMiniCounter();
             } catch(e) { alert("Błąd usuwania: " + e.message); }
         };
 
@@ -458,28 +528,43 @@
             const total = { calories:0, protein:0, carbs:0, fat:0 };
             let hasMacros = false;
             cart.forEach(r => {
-                if (r.macros) {
-                    hasMacros = true;
-                    total.calories += r.macros.calories||0;
-                    total.protein  += r.macros.protein||0;
-                    total.carbs    += r.macros.carbs||0;
-                    total.fat      += r.macros.fat||0;
-                }
+                if (r.macros) { hasMacros=true; total.calories+=r.macros.calories||0; total.protein+=r.macros.protein||0; total.carbs+=r.macros.carbs||0; total.fat+=r.macros.fat||0; }
             });
+
+            const remaining = getRemaining();
+            const col = getProgressColor();
+            const over = remaining < 0;
 
             document.getElementById("app").innerHTML = `
                 <div class="max-w-2xl mx-auto p-4 pb-10">
-                    <div class="flex items-center gap-3 mb-6 pt-4">
+                    <div class="flex items-center gap-3 mb-5 pt-4">
                         <button onclick="window.goHome()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-xl text-sm">← Wróć</button>
                         <h2 class="text-xl font-black text-gray-800">🛒 Lista Zakupów</h2>
                         <button onclick="window.copyFullList()" id="copyBtn" class="ml-auto bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-4 py-2 rounded-xl text-sm">📋 Kopiuj</button>
                     </div>
 
+                    <!-- Podsumowanie kalorii na górze wyników -->
+                    <div class="mb-5 p-4 ${col.bg} border-2 rounded-2xl">
+                        <div class="flex items-center justify-between mb-2">
+                            <p class="font-black text-gray-800">🔥 Podsumowanie kalorii dnia</p>
+                            <p class="font-black text-2xl ${col.text}">${Math.round(total.calories)} kcal</p>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden mb-2">
+                            <div class="${col.bar} h-3 rounded-full" style="width:${getProgressPct()}%"></div>
+                        </div>
+                        <div class="flex justify-between text-xs text-gray-500">
+                            <span>Limit: <b>${dailyLimit} kcal</b></span>
+                            <span>${over ? `<b class="text-red-600">⚠️ Przekroczono o ${Math.abs(remaining)} kcal</b>` : `<b class="${col.text}">Pozostało: ${remaining} kcal</b>`}</span>
+                        </div>
+                    </div>
+
+                    <!-- Lista zakupów z podziałem -->
                     <div class="space-y-5 mb-6">
                         ${CATEGORIES.filter(cat => grouped[cat.id]?.length > 0).map(cat => `
                             <div class="rounded-2xl overflow-hidden border-2 ${cat.light}">
-                                <div class="bg-gradient-to-r ${cat.color} text-white px-4 py-3 font-black text-base">
-                                    ${cat.emoji} ${cat.label}
+                                <div class="bg-gradient-to-r ${cat.color} text-white px-4 py-3 font-black text-base flex justify-between items-center">
+                                    <span>${cat.emoji} ${cat.label}</span>
+                                    <span class="text-sm font-bold opacity-90">${grouped[cat.id].reduce((s,r)=>s+(r.macros?.calories||0),0)} kcal</span>
                                 </div>
                                 <div class="p-3 space-y-4">
                                     ${grouped[cat.id].map((recipe, ri) => `
@@ -487,7 +572,8 @@
                                         <div>
                                             <div class="flex items-center gap-2 mb-2 flex-wrap">
                                                 <p class="font-bold text-gray-700 text-sm">📋 ${recipe.title}</p>
-                                                ${recipe._scaled ? `<span class="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full font-bold">⚡ ${recipe._targetKcal} kcal (×${Math.round(recipe._ratio*100)/100})</span>` : ''}
+                                                ${recipe._scaled ? `<span class="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full font-bold">⚡ ${recipe._targetKcal} kcal</span>` : ''}
+                                                ${recipe.macros?.calories ? `<span class="text-xs text-gray-400 ml-auto">${recipe.macros.calories} kcal</span>` : ''}
                                             </div>
                                             <div class="space-y-1.5 pl-2">
                                                 ${recipe.ingredients?.map(ing => `
@@ -515,27 +601,17 @@
                                 <div class="text-sm text-orange-500 font-bold mt-1">KALORII RAZEM</div>
                             </div>
                             <div class="grid grid-cols-3 gap-2 mb-4">
-                                <div class="bg-blue-50 border border-blue-200 p-3 rounded-xl text-center">
-                                    <div class="text-2xl font-black text-blue-600">${Math.round(total.protein*10)/10}g</div>
-                                    <div class="text-xs text-blue-500 mt-1">💪 Białko</div>
-                                </div>
-                                <div class="bg-green-50 border border-green-200 p-3 rounded-xl text-center">
-                                    <div class="text-2xl font-black text-green-600">${Math.round(total.carbs*10)/10}g</div>
-                                    <div class="text-xs text-green-500 mt-1">🍞 Węglowodany</div>
-                                </div>
-                                <div class="bg-yellow-50 border border-yellow-200 p-3 rounded-xl text-center">
-                                    <div class="text-2xl font-black text-yellow-600">${Math.round(total.fat*10)/10}g</div>
-                                    <div class="text-xs text-yellow-500 mt-1">🧈 Tłuszcze</div>
-                                </div>
+                                <div class="bg-blue-50 border border-blue-200 p-3 rounded-xl text-center"><div class="text-2xl font-black text-blue-600">${Math.round(total.protein*10)/10}g</div><div class="text-xs text-blue-500 mt-1">💪 Białko</div></div>
+                                <div class="bg-green-50 border border-green-200 p-3 rounded-xl text-center"><div class="text-2xl font-black text-green-600">${Math.round(total.carbs*10)/10}g</div><div class="text-xs text-green-500 mt-1">🍞 Węglowodany</div></div>
+                                <div class="bg-yellow-50 border border-yellow-200 p-3 rounded-xl text-center"><div class="text-2xl font-black text-yellow-600">${Math.round(total.fat*10)/10}g</div><div class="text-xs text-yellow-500 mt-1">🧈 Tłuszcze</div></div>
                             </div>
                             ${cart.filter(r=>r.macros).length > 1 ? `
                             <div class="border-t border-orange-200 pt-3">
                                 <p class="text-xs font-bold text-gray-500 mb-2">Podział per przepis:</p>
                                 ${cart.filter(r=>r.macros).map(r => {
                                     const cat = CATEGORIES.find(c=>c.id===r.categoryId);
-                                    const scaled = r._scaled ? ' ⚡' : '';
                                     return `<div class="flex justify-between text-xs text-gray-600 py-1.5 border-b border-gray-100">
-                                        <span>${cat?.emoji} ${r.title}${scaled}</span>
+                                        <span>${cat?.emoji} ${r.title}${r._scaled?' ⚡':''}</span>
                                         <span class="font-bold">${r.macros.calories} kcal · ${r.macros.protein}g B · ${r.macros.carbs}g W · ${r.macros.fat}g T</span>
                                     </div>`;
                                 }).join('')}
@@ -543,8 +619,7 @@
                         </div>
                     </div>` : ''}
 
-                    <button onclick="window.clearCartAndHome()"
-                        class="w-full bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-3 rounded-xl text-sm transition-all">
+                    <button onclick="window.clearCartAndHome()" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-3 rounded-xl text-sm transition-all">
                         🗑️ Wyczyść koszyk i zacznij od nowa
                     </button>
                 </div>
@@ -572,8 +647,7 @@
             CATEGORIES.filter(cat => grouped[cat.id]?.length > 0).forEach(cat => {
                 text += cat.emoji + " " + cat.label.toUpperCase() + "\n" + "─".repeat(28) + "\n";
                 grouped[cat.id].forEach(recipe => {
-                    const scaled = recipe._scaled ? " (⚡" + recipe._targetKcal + " kcal)" : "";
-                    text += "  📋 " + recipe.title + scaled + "\n";
+                    text += "  📋 " + recipe.title + (recipe._scaled ? " (⚡"+recipe._targetKcal+" kcal)" : "") + "\n";
                     recipe.ingredients?.forEach(ing => { text += "     • " + ing + "\n"; });
                     text += "\n";
                 });
@@ -583,7 +657,7 @@
             cart.forEach(r => { if (r.macros) { hasMacros=true; total.calories+=r.macros.calories||0; total.protein+=r.macros.protein||0; total.carbs+=r.macros.carbs||0; total.fat+=r.macros.fat||0; } });
             if (hasMacros) {
                 text += "📊 MAKROSKŁADNIKI RAZEM\n" + "─".repeat(28) + "\n";
-                text += "🔥 Kalorie: " + Math.round(total.calories) + " kcal\n";
+                text += "🔥 Kalorie: " + Math.round(total.calories) + " / " + dailyLimit + " kcal (pozostało: " + getRemaining() + ")\n";
                 text += "💪 Białko: " + Math.round(total.protein*10)/10 + "g\n";
                 text += "🍞 Węglowodany: " + Math.round(total.carbs*10)/10 + "g\n";
                 text += "🧈 Tłuszcze: " + Math.round(total.fat*10)/10 + "g\n\n";
@@ -592,7 +666,7 @@
             try {
                 await navigator.clipboard.writeText(text);
                 const btn = document.getElementById("copyBtn");
-                if (btn) { btn.textContent = "✅ Skopiowano!"; btn.classList.replace("bg-indigo-500","bg-green-500"); setTimeout(()=>{ btn.textContent="📋 Kopiuj"; btn.classList.replace("bg-green-500","bg-indigo-500"); },2000); }
+                if (btn) { btn.textContent="✅ Skopiowano!"; btn.classList.replace("bg-indigo-500","bg-green-500"); setTimeout(()=>{ btn.textContent="📋 Kopiuj"; btn.classList.replace("bg-green-500","bg-indigo-500"); },2000); }
             } catch(e) { alert("Błąd kopiowania"); }
         };
 
@@ -602,13 +676,11 @@
         async function processQueue() {
             if (isProcessing || processingQueue.length === 0) return;
             isProcessing = true;
-            const total = processingQueue.length;
-            let done = 0;
+            const total = processingQueue.length; let done = 0;
             while (processingQueue.length > 0) {
                 const file = processingQueue.shift(); done++;
                 updateQueueProgress(done, total);
-                const qi = document.getElementById("queueInfo");
-                if (qi) qi.textContent = "Przetwarzanie: " + file.name;
+                const qi = document.getElementById("queueInfo"); if (qi) qi.textContent = "Przetwarzanie: " + file.name;
                 try { await processImage(file); if (processingQueue.length > 0) await sleep(500); } catch(e) { console.error(e); }
             }
             setTimeout(() => { const el=document.getElementById("queueProgress"); if(el) el.classList.add("hidden"); }, 2000);
@@ -622,7 +694,7 @@
                 const { data: { text } } = await Tesseract.recognize(file, "pol+eng", {
                     logger: m => { if (m.status==="recognizing text") showProgress("🔍 OCR: " + Math.round(m.progress*100) + "% — " + file.name); }
                 });
-                if (!text || text.trim().length < 10) { showError("Pominięto: " + file.name + " (brak tekstu)"); await sleep(2000); hideProgress(); return; }
+                if (!text || text.trim().length < 10) { showError("Pominięto: " + file.name); await sleep(2000); hideProgress(); return; }
                 showProgress("🤖 Analiza AI...");
                 await processWithGPT(text, file.name);
             } catch(e) { showError("Błąd (" + file.name + "): " + e.message); await sleep(3000); hideProgress(); }
@@ -641,23 +713,10 @@
         }
 
         window.goHome = function() { renderHome(); };
-
-        function showProgress(text) {
-            const el=document.getElementById("progress"); if(el) el.classList.remove("hidden");
-            const t=document.getElementById("progressText"); if(t) t.textContent=text;
-            const err=document.getElementById("errorBox"); if(err) err.classList.add("hidden");
-        }
+        function showProgress(text) { const el=document.getElementById("progress"); if(el) el.classList.remove("hidden"); const t=document.getElementById("progressText"); if(t) t.textContent=text; const err=document.getElementById("errorBox"); if(err) err.classList.add("hidden"); }
         function hideProgress() { const el=document.getElementById("progress"); if(el) el.classList.add("hidden"); }
-        function showError(text) {
-            const el=document.getElementById("errorBox"); if(el) el.classList.remove("hidden");
-            const t=document.getElementById("errorText"); if(t) t.textContent=text;
-            hideProgress();
-        }
-        function updateQueueProgress(current, total) {
-            const pct = total>0 ? (current/total)*100 : 0;
-            const bar=document.getElementById("queueBar"); if(bar) bar.style.width=pct+"%";
-            const s=document.getElementById("queueStatus"); if(s) s.textContent=current+" / "+total;
-        }
+        function showError(text) { const el=document.getElementById("errorBox"); if(el) el.classList.remove("hidden"); const t=document.getElementById("errorText"); if(t) t.textContent=text; hideProgress(); }
+        function updateQueueProgress(current, total) { const pct=total>0?(current/total)*100:0; const bar=document.getElementById("queueBar"); if(bar) bar.style.width=pct+"%"; const s=document.getElementById("queueStatus"); if(s) s.textContent=current+" / "+total; }
         function sleep(ms) { return new Promise(r=>setTimeout(r,ms)); }
     </script>
 </head>
