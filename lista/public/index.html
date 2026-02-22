@@ -10,9 +10,6 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        // =============================================
-        // FIREBASE CONFIG
-        // =============================================
         const firebaseConfig = {
             apiKey: "AIzaSyBxS26DGBLPz24OF0V9fZ-99RGQA41hJtE",
             authDomain: "lista-zakupow-3f33b.firebaseapp.com",
@@ -25,72 +22,86 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // =============================================
-        // KATEGORIE
-        // =============================================
         const CATEGORIES = [
-            { id: "sniadania",         label: "Śniadania",          emoji: "🌅", color: "from-amber-400 to-orange-400" },
-            { id: "drugie_sniadania",  label: "Drugie Śniadania",   emoji: "🥪", color: "from-lime-400 to-green-400" },
-            { id: "obiady",            label: "Obiady",             emoji: "🍲", color: "from-blue-400 to-indigo-400" },
-            { id: "kolacje",           label: "Kolacje",            emoji: "🌙", color: "from-purple-400 to-pink-400" },
-            { id: "dodatkowy_posilek", label: "Dodatkowy Posiłek",  emoji: "🍎", color: "from-rose-400 to-red-400" },
+            { id: "sniadania",         label: "Śniadania",         emoji: "🌅", color: "from-amber-400 to-orange-500",   light: "bg-amber-50 border-amber-200",   badge: "bg-amber-100 text-amber-700" },
+            { id: "drugie_sniadania",  label: "Drugie Śniadania",  emoji: "🥪", color: "from-lime-400 to-green-500",    light: "bg-lime-50 border-lime-200",     badge: "bg-lime-100 text-lime-700" },
+            { id: "obiady",            label: "Obiady",            emoji: "🍲", color: "from-blue-400 to-indigo-500",   light: "bg-blue-50 border-blue-200",     badge: "bg-blue-100 text-blue-700" },
+            { id: "kolacje",           label: "Kolacje",           emoji: "🌙", color: "from-purple-400 to-pink-500",   light: "bg-purple-50 border-purple-200", badge: "bg-purple-100 text-purple-700" },
+            { id: "dodatkowy_posilek", label: "Dodatkowy Posiłek", emoji: "🍎", color: "from-rose-400 to-red-500",      light: "bg-rose-50 border-rose-200",     badge: "bg-rose-100 text-rose-700" },
         ];
 
-        // =============================================
-        // STAN APLIKACJI
-        // =============================================
-        let currentView = "home";          // "home" | "category" | "add"
+        let cart = [];
         let currentCategory = null;
-        let categoryRecipes = [];          // przepisy z Firebase dla aktywnej kategorii
-        let selectedRecipes = new Set();
-        let shoppingList = [];
+        let categoryRecipes = [];
+        let localSelected = new Set();
         let isProcessing = false;
         let processingQueue = [];
         let recipeIdCounter = 1;
 
-        // =============================================
-        // INIT
-        // =============================================
-        window.addEventListener("DOMContentLoaded", () => {
-            renderHome();
-        });
+        window.addEventListener("DOMContentLoaded", () => { renderHome(); });
 
-        // =============================================
-        // WIDOK: STRONA GŁÓWNA (kategorie)
-        // =============================================
+        // ── HOME ──────────────────────────────────────────────
         function renderHome() {
-            currentView = "home";
             currentCategory = null;
-            selectedRecipes.clear();
-            shoppingList = [];
+            categoryRecipes = [];
+            localSelected = new Set();
 
             document.getElementById("app").innerHTML = `
                 <div class="max-w-2xl mx-auto p-4 pb-10">
-                    <div class="text-center mb-8 pt-6">
-                        <div class="text-5xl mb-3">🛒</div>
+                    <div class="text-center mb-6 pt-6">
+                        <div class="text-5xl mb-2">🛒</div>
                         <h1 class="text-3xl font-black text-gray-800 tracking-tight">Lista Zakupów AI</h1>
-                        <p class="text-gray-500 mt-1">Wybierz kategorię posiłku</p>
+                        <p class="text-gray-500 mt-1 text-sm">Wybierz przepisy z kategorii, potem wygeneruj listę</p>
                     </div>
 
-                    <div class="grid grid-cols-1 gap-4">
-                        ${CATEGORIES.map(cat => `
-                            <button onclick="window.openCategory('${cat.id}')"
-                                class="group relative overflow-hidden bg-gradient-to-r ${cat.color} text-white font-bold py-6 px-6 rounded-2xl shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 text-left">
-                                <div class="flex items-center gap-4">
-                                    <span class="text-4xl">${cat.emoji}</span>
-                                    <div>
-                                        <div class="text-xl font-black">${cat.label}</div>
-                                        <div class="text-sm opacity-80 font-normal" id="count-${cat.id}">Ładowanie...</div>
-                                    </div>
-                                </div>
-                                <div class="absolute right-6 top-1/2 -translate-y-1/2 text-3xl opacity-30 group-hover:opacity-60 transition-opacity">›</div>
-                            </button>
-                        `).join("")}
+                    <div id="cartBanner" class="${cart.length ? '' : 'hidden'} mb-5 p-4 bg-green-50 border-2 border-green-300 rounded-2xl">
+                        <div class="flex items-center justify-between mb-2">
+                            <p class="font-black text-green-800">🧺 Koszyk: ${cart.length} przepisów</p>
+                            <div class="flex gap-2">
+                                <button onclick="window.clearCart()" class="bg-red-100 hover:bg-red-200 text-red-600 font-bold px-3 py-1.5 rounded-lg text-sm">🗑️ Wyczyść</button>
+                                <button onclick="window.goToResults()" class="bg-green-500 hover:bg-green-600 text-white font-bold px-3 py-1.5 rounded-lg text-sm">Generuj →</button>
+                            </div>
+                        </div>
+                        <p class="text-xs text-green-600 mb-2">${getCartSummary()}</p>
+                        <div class="space-y-1">
+                            ${cart.map(r => {
+                                const cat = CATEGORIES.find(c => c.id === r.categoryId);
+                                return `<div class="flex items-center justify-between text-sm py-0.5">
+                                    <span class="text-green-700">${cat?.emoji || ''} <span class="font-semibold">${r.title}</span> <span class="text-green-500 text-xs">(${cat?.label})</span></span>
+                                    <button onclick="window.removeFromCart('${r.firebaseId}')" class="text-red-400 hover:text-red-600 text-xs ml-2 font-bold">✕</button>
+                                </div>`;
+                            }).join('')}
+                        </div>
                     </div>
+
+                    <div class="grid grid-cols-1 gap-3 mb-5">
+                        ${CATEGORIES.map(cat => {
+                            const inCart = cart.filter(r => r.categoryId === cat.id).length;
+                            return `<button onclick="window.openCategory('${cat.id}')"
+                                class="group relative overflow-hidden bg-gradient-to-r ${cat.color} text-white font-bold py-5 px-6 rounded-2xl shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-150 text-left">
+                                <div class="flex items-center gap-4">
+                                    <span class="text-3xl">${cat.emoji}</span>
+                                    <div class="flex-1">
+                                        <div class="text-lg font-black">${cat.label}</div>
+                                        <div class="text-xs opacity-75 font-normal" id="count-${cat.id}">Ładowanie...</div>
+                                    </div>
+                                    ${inCart > 0 ? `<div class="bg-white text-green-600 font-black text-sm px-3 py-1 rounded-full">${inCart} ✓</div>` : ''}
+                                </div>
+                                <div class="absolute right-5 top-1/2 -translate-y-1/2 text-3xl opacity-30 group-hover:opacity-60 transition-opacity">›</div>
+                            </button>`;
+                        }).join('')}
+                    </div>
+
+                    ${cart.length ? `
+                    <button onclick="window.goToResults()"
+                        class="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black py-5 rounded-2xl shadow-xl text-lg hover:opacity-90 transition-all">
+                        🛒 Generuj listę zakupów (${cart.length} przepisów)
+                    </button>` : `
+                    <div class="text-center text-gray-400 py-6 border-2 border-dashed border-gray-200 rounded-2xl">
+                        <p class="text-sm">Wejdź w kategorię → zaznacz przepisy → dodaj do koszyka</p>
+                    </div>`}
                 </div>
             `;
-
-            // Załaduj liczniki
             CATEGORIES.forEach(cat => loadCategoryCount(cat));
         }
 
@@ -98,104 +109,108 @@
             try {
                 const q = query(collection(db, "recipes"), where("category", "==", cat.id));
                 const snap = await getDocs(q);
-                const el = document.getElementById(`count-${cat.id}`);
-                if (el) el.textContent = `${snap.size} przepisów`;
-            } catch (e) {
-                const el = document.getElementById(`count-${cat.id}`);
-                if (el) el.textContent = "błąd ładowania";
+                const el = document.getElementById("count-" + cat.id);
+                if (el) el.textContent = snap.size + " przepisów w bazie";
+            } catch(e) {
+                const el = document.getElementById("count-" + cat.id);
+                if (el) el.textContent = "błąd";
             }
         }
 
-        // =============================================
-        // WIDOK: KATEGORIA (lista przepisów)
-        // =============================================
+        function getCartSummary() {
+            if (!cart.length) return '';
+            const byCat = {};
+            cart.forEach(r => {
+                const cat = CATEGORIES.find(c => c.id === r.categoryId);
+                const label = cat ? cat.label : r.categoryId;
+                byCat[label] = (byCat[label] || 0) + 1;
+            });
+            return Object.entries(byCat).map(([k,v]) => k + ": " + v).join(' · ');
+        }
+
+        // ── KOSZYK ────────────────────────────────────────────
+        window.clearCart = function() { if (confirm("Wyczyścić koszyk?")) { cart = []; renderHome(); } };
+        window.removeFromCart = function(id) { cart = cart.filter(r => r.firebaseId !== id); renderHome(); };
+        function isInCart(id) { return cart.some(r => r.firebaseId === id); }
+
+        function updateCategoryCartBadge() {
+            const el = document.getElementById("cartBadge");
+            if (!el) return;
+            const count = cart.length;
+            el.textContent = count > 0 ? "🧺 " + count + " w koszyku" : "🧺 Koszyk pusty";
+            el.className = count > 0
+                ? "text-sm font-bold text-green-700 bg-green-100 px-3 py-1 rounded-full"
+                : "text-sm font-bold text-gray-400 bg-gray-100 px-3 py-1 rounded-full";
+        }
+
+        // ── WIDOK KATEGORII ───────────────────────────────────
         window.openCategory = async function(categoryId) {
             currentCategory = CATEGORIES.find(c => c.id === categoryId);
-            currentView = "category";
-            selectedRecipes.clear();
-            shoppingList = [];
+            categoryRecipes = [];
+            localSelected = new Set();
 
             document.getElementById("app").innerHTML = `
-                <div class="max-w-2xl mx-auto p-4 pb-10">
-                    <div class="flex items-center gap-3 mb-6 pt-4">
-                        <button onclick="window.goHome()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-xl transition-all">← Wróć</button>
-                        <div>
-                            <h2 class="text-2xl font-black text-gray-800">${currentCategory.emoji} ${currentCategory.label}</h2>
+                <div class="max-w-2xl mx-auto p-4 pb-28">
+                    <div class="flex items-center gap-3 mb-4 pt-4">
+                        <button onclick="window.goHome()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-xl text-sm">← Wróć</button>
+                        <div class="flex-1">
+                            <h2 class="text-xl font-black text-gray-800">${currentCategory.emoji} ${currentCategory.label}</h2>
                         </div>
+                        <span id="cartBadge" class="text-sm font-bold text-gray-400 bg-gray-100 px-3 py-1 rounded-full">🧺 Koszyk pusty</span>
                     </div>
 
-                    <!-- Dodaj przepisy -->
-                    <div class="mb-6">
-                        <label for="imageInput"
-                            class="block w-full bg-gradient-to-r ${currentCategory.color} text-white font-bold py-4 px-6 rounded-xl text-center cursor-pointer shadow-md hover:opacity-90 transition-all">
-                            <span class="text-2xl mr-2">📸</span> Dodaj screenshot(y) do kategorii
+                    <div class="mb-5">
+                        <label for="imageInput" class="block w-full bg-gradient-to-r ${currentCategory.color} text-white font-bold py-4 px-6 rounded-xl text-center cursor-pointer shadow-md hover:opacity-90 transition-all">
+                            <span class="text-xl mr-2">📸</span> Dodaj screenshot(y) do bazy
                             <p class="text-xs mt-1 opacity-80">Możesz wybrać wiele plików naraz!</p>
                         </label>
                         <input type="file" id="imageInput" accept="image/*" class="hidden" multiple>
                     </div>
 
-                    <!-- Queue Progress -->
                     <div id="queueProgress" class="hidden mb-4 p-4 bg-indigo-50 border-2 border-indigo-200 rounded-xl">
                         <div class="flex items-center justify-between mb-2">
                             <span class="font-bold text-indigo-800">📥 Przetwarzanie</span>
                             <span class="text-indigo-600 font-bold" id="queueStatus">0 / 0</span>
                         </div>
                         <div class="w-full bg-indigo-200 rounded-full h-3 overflow-hidden">
-                            <div id="queueBar" class="bg-indigo-600 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+                            <div id="queueBar" class="bg-indigo-600 h-3 rounded-full transition-all" style="width:0%"></div>
                         </div>
-                        <p class="text-sm text-indigo-600 mt-2" id="queueInfo">Przetwarzanie...</p>
+                        <p class="text-sm text-indigo-600 mt-2" id="queueInfo"></p>
                     </div>
 
                     <div id="progress" class="hidden mb-4 p-4 bg-blue-50 border-2 border-blue-200 rounded-xl text-center">
                         <div class="animate-spin rounded-full h-10 w-10 border-4 border-blue-600 border-t-transparent mx-auto mb-2"></div>
-                        <p id="progressText" class="text-blue-700 font-bold"></p>
+                        <p id="progressText" class="text-blue-700 font-bold text-sm"></p>
                     </div>
 
-                    <div id="error" class="hidden mb-4 p-4 bg-red-50 border-2 border-red-200 rounded-xl">
-                        <p class="text-red-700 font-bold">⚠️ <span id="errorText"></span></p>
+                    <div id="errorBox" class="hidden mb-4 p-3 bg-red-50 border-2 border-red-200 rounded-xl">
+                        <p class="text-red-700 text-sm font-bold">⚠️ <span id="errorText"></span></p>
                     </div>
 
-                    <!-- Lista przepisów -->
-                    <div class="mb-4 flex items-center justify-between">
-                        <h3 class="text-lg font-bold text-gray-700">Przepisy w kategorii</h3>
-                        <span id="recipeCount" class="bg-gray-100 text-gray-600 px-3 py-1 rounded-full text-sm font-bold">0</span>
+                    <div class="mb-3 flex items-center justify-between">
+                        <h3 class="text-sm font-bold text-gray-500">Zaznacz przepisy → dodaj do koszyka</h3>
+                        <span id="recipeCount" class="bg-gray-100 text-gray-500 px-3 py-1 rounded-full text-xs font-bold">0</span>
                     </div>
-                    <div id="recipesList" class="space-y-3 mb-6">
+
+                    <div id="recipesList" class="space-y-3">
                         <div class="text-center text-gray-400 py-8">
-                            <div class="text-4xl mb-2">⏳</div>
-                            <p>Ładowanie przepisów...</p>
+                            <div class="animate-spin rounded-full h-8 w-8 border-4 border-gray-300 border-t-indigo-400 mx-auto mb-3"></div>
+                            <p class="text-sm">Ładowanie...</p>
                         </div>
                     </div>
+                </div>
 
-                    <!-- Generuj listę -->
-                    <button id="generateBtn" onclick="window.generateShoppingList()" disabled
-                        class="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold py-4 rounded-xl mb-6 shadow-lg disabled:opacity-40 transition-all">
-                        🛒 Wygeneruj Listę Zakupów z zaznaczonych
-                    </button>
-
-                    <!-- Wyniki -->
-                    <div id="resultsSection" class="hidden">
-                        <div class="grid md:grid-cols-2 gap-4">
-                            <div>
-                                <div class="flex justify-between items-center mb-3">
-                                    <h3 class="text-xl font-bold text-gray-800">🛒 Lista Zakupów</h3>
-                                    <button id="copyBtn" onclick="window.copyShoppingList()"
-                                        class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-4 py-2 rounded-lg text-sm transition-all">
-                                        📋 Kopiuj
-                                    </button>
-                                </div>
-                                <div id="shoppingList" class="bg-gray-50 rounded-xl p-4"></div>
-                            </div>
-                            <div>
-                                <h3 class="text-xl font-bold text-gray-800 mb-3">📊 Makroskładniki</h3>
-                                <div id="macrosSummary" class="bg-gradient-to-br from-orange-50 to-yellow-50 rounded-xl p-4"></div>
-                            </div>
-                        </div>
+                <!-- Sticky bottom bar -->
+                <div id="stickyBar" class="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-gray-200 p-4 hidden">
+                    <div class="max-w-2xl mx-auto">
+                        <button onclick="window.addSelectedToCart()"
+                            class="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black py-4 rounded-2xl shadow-xl text-base hover:opacity-90 transition-all">
+                            🧺 Dodaj zaznaczone do koszyka (<span id="selectedCount">0</span>)
+                        </button>
                     </div>
                 </div>
             `;
 
-            // Event listener dla plików
             document.getElementById("imageInput").addEventListener("change", function(e) {
                 const files = Array.from(e.target.files);
                 if (!files.length) return;
@@ -205,7 +220,7 @@
                 processQueue();
             });
 
-            // Załaduj przepisy z Firebase
+            updateCategoryCartBadge();
             await loadCategoryRecipes();
         };
 
@@ -214,125 +229,270 @@
                 const q = query(collection(db, "recipes"), where("category", "==", currentCategory.id));
                 const snap = await getDocs(q);
                 categoryRecipes = snap.docs.map(d => ({ firebaseId: d.id, ...d.data() }));
-                renderRecipes();
-            } catch (e) {
-                showError("Błąd ładowania przepisów: " + e.message);
+                renderCategoryRecipes();
+            } catch(e) {
+                showError("Błąd ładowania: " + e.message);
             }
         }
 
-        function renderRecipes() {
+        function renderCategoryRecipes() {
             const container = document.getElementById("recipesList");
             const countEl = document.getElementById("recipeCount");
+            const stickyBar = document.getElementById("stickyBar");
+            const selCount = document.getElementById("selectedCount");
             if (!container) return;
 
             if (countEl) countEl.textContent = categoryRecipes.length;
+            if (stickyBar) {
+                if (localSelected.size > 0) stickyBar.classList.remove("hidden");
+                else stickyBar.classList.add("hidden");
+            }
+            if (selCount) selCount.textContent = localSelected.size;
 
             if (!categoryRecipes.length) {
                 container.innerHTML = `
                     <div class="text-center text-gray-400 py-10 border-2 border-dashed border-gray-200 rounded-xl">
-                        <div class="text-5xl mb-3">📭</div>
-                        <p class="font-bold">Brak przepisów w tej kategorii</p>
-                        <p class="text-sm mt-1">Dodaj screenshoty powyżej!</p>
-                    </div>
-                `;
-                document.getElementById("generateBtn").disabled = true;
+                        <div class="text-4xl mb-3">📭</div>
+                        <p class="font-bold text-sm">Brak przepisów</p>
+                        <p class="text-xs mt-1">Dodaj screenshoty powyżej!</p>
+                    </div>`;
                 return;
             }
 
-            container.innerHTML = categoryRecipes.map(r => `
-                <div onclick="window.toggleRecipe('${r.firebaseId}')"
-                    class="p-4 rounded-xl border-2 cursor-pointer transition-all ${selectedRecipes.has(r.firebaseId) ? `border-indigo-500 bg-indigo-50 shadow-md` : `border-gray-200 bg-white hover:border-gray-300`}">
+            container.innerHTML = categoryRecipes.map(r => {
+                const inCart = isInCart(r.firebaseId);
+                const selected = localSelected.has(r.firebaseId);
+                return `
+                <div onclick="window.toggleLocalSelect('${r.firebaseId}')"
+                    class="p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                        inCart    ? 'border-green-400 bg-green-50' :
+                        selected  ? 'border-indigo-400 bg-indigo-50 shadow-md' :
+                                    'border-gray-200 bg-white hover:border-gray-300'
+                    }">
                     <div class="flex justify-between items-start">
-                        <div class="flex-1">
-                            <h3 class="font-bold text-gray-800">${r.title}</h3>
-                            <p class="text-sm text-gray-500 mt-1">📋 ${r.ingredients?.length || 0} składników</p>
-                        </div>
-                        <div class="flex items-center gap-2 ml-3">
-                            <button onclick="window.deleteRecipe('${r.firebaseId}', event)"
-                                class="text-red-400 hover:text-red-600 text-lg transition-colors" title="Usuń">🗑️</button>
-                            <div class="w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${selectedRecipes.has(r.firebaseId) ? `bg-indigo-500 border-indigo-500 text-white` : `border-gray-300`}">
-                                ${selectedRecipes.has(r.firebaseId) ? "✓" : ""}
+                        <div class="flex-1 pr-2">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <h3 class="font-bold text-gray-800 text-sm">${r.title}</h3>
+                                ${inCart ? '<span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold">✓ w koszyku</span>' : ''}
                             </div>
+                            <p class="text-xs text-gray-500 mt-1">📋 ${r.ingredients?.length || 0} składników</p>
+                        </div>
+                        <div class="flex items-center gap-2 flex-shrink-0">
+                            <button onclick="window.deleteRecipe('${r.firebaseId}', event)" class="text-red-300 hover:text-red-500 transition-colors" title="Usuń z bazy">🗑️</button>
+                            <div class="w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold ${
+                                inCart   ? 'bg-green-500 border-green-500 text-white' :
+                                selected ? 'bg-indigo-500 border-indigo-500 text-white' :
+                                           'border-gray-300'
+                            }">${inCart || selected ? '✓' : ''}</div>
                         </div>
                     </div>
                     ${r.macros ? `
-                        <div class="mt-3 pt-3 border-t grid grid-cols-4 gap-2 text-xs">
-                            <div class="bg-orange-100 p-2 rounded text-center">
-                                <div class="font-bold text-orange-700">${r.macros.calories || 0}</div>
-                                <div class="text-orange-600">kcal</div>
-                            </div>
-                            <div class="bg-blue-100 p-2 rounded text-center">
-                                <div class="font-bold text-blue-700">${r.macros.protein || 0}g</div>
-                                <div class="text-blue-600">B</div>
-                            </div>
-                            <div class="bg-green-100 p-2 rounded text-center">
-                                <div class="font-bold text-green-700">${r.macros.carbs || 0}g</div>
-                                <div class="text-green-600">W</div>
-                            </div>
-                            <div class="bg-yellow-100 p-2 rounded text-center">
-                                <div class="font-bold text-yellow-700">${r.macros.fat || 0}g</div>
-                                <div class="text-yellow-600">T</div>
-                            </div>
-                        </div>
-                    ` : `<p class="text-xs text-gray-400 mt-2">Brak makroskładników</p>`}
-                </div>
-            `).join("");
-
-            document.getElementById("generateBtn").disabled = selectedRecipes.size === 0;
+                        <div class="mt-2 pt-2 border-t grid grid-cols-4 gap-1 text-xs">
+                            <div class="bg-orange-100 p-1.5 rounded text-center"><div class="font-bold text-orange-700">${r.macros.calories||0}</div><div class="text-orange-500">kcal</div></div>
+                            <div class="bg-blue-100 p-1.5 rounded text-center"><div class="font-bold text-blue-700">${r.macros.protein||0}g</div><div class="text-blue-500">B</div></div>
+                            <div class="bg-green-100 p-1.5 rounded text-center"><div class="font-bold text-green-700">${r.macros.carbs||0}g</div><div class="text-green-500">W</div></div>
+                            <div class="bg-yellow-100 p-1.5 rounded text-center"><div class="font-bold text-yellow-700">${r.macros.fat||0}g</div><div class="text-yellow-500">T</div></div>
+                        </div>` : ''}
+                </div>`;
+            }).join('');
         }
 
-        // =============================================
-        // TOGGLE / DELETE
-        // =============================================
-        window.toggleRecipe = function(firebaseId) {
-            if (selectedRecipes.has(firebaseId)) {
-                selectedRecipes.delete(firebaseId);
-            } else {
-                selectedRecipes.add(firebaseId);
+        window.toggleLocalSelect = function(firebaseId) {
+            if (isInCart(firebaseId)) {
+                cart = cart.filter(r => r.firebaseId !== firebaseId);
+                updateCategoryCartBadge();
+                renderCategoryRecipes();
+                return;
             }
-            renderRecipes();
+            if (localSelected.has(firebaseId)) localSelected.delete(firebaseId);
+            else localSelected.add(firebaseId);
+            renderCategoryRecipes();
+        };
+
+        window.addSelectedToCart = function() {
+            localSelected.forEach(id => {
+                const recipe = categoryRecipes.find(r => r.firebaseId === id);
+                if (recipe && !isInCart(id)) cart.push({ ...recipe, categoryId: currentCategory.id });
+            });
+            localSelected.clear();
+            renderCategoryRecipes();
+            updateCategoryCartBadge();
         };
 
         window.deleteRecipe = async function(firebaseId, event) {
             event.stopPropagation();
-            if (!confirm("Czy na pewno usunąć ten przepis z bazy?")) return;
+            if (!confirm("Usunąć ten przepis z bazy?")) return;
             try {
                 await deleteDoc(doc(db, "recipes", firebaseId));
                 categoryRecipes = categoryRecipes.filter(r => r.firebaseId !== firebaseId);
-                selectedRecipes.delete(firebaseId);
-                renderRecipes();
-            } catch (e) {
-                alert("Błąd usuwania: " + e.message);
+                localSelected.delete(firebaseId);
+                cart = cart.filter(r => r.firebaseId !== firebaseId);
+                renderCategoryRecipes();
+                updateCategoryCartBadge();
+            } catch(e) { alert("Błąd usuwania: " + e.message); }
+        };
+
+        // ── WYNIKI ────────────────────────────────────────────
+        window.goToResults = function() {
+            if (!cart.length) { alert("Koszyk jest pusty!"); return; }
+
+            const grouped = {};
+            CATEGORIES.forEach(cat => { grouped[cat.id] = []; });
+            cart.forEach(r => { if (grouped[r.categoryId]) grouped[r.categoryId].push(r); });
+
+            const total = { calories:0, protein:0, carbs:0, fat:0 };
+            let hasMacros = false;
+            cart.forEach(r => {
+                if (r.macros) {
+                    hasMacros = true;
+                    total.calories += r.macros.calories||0;
+                    total.protein  += r.macros.protein||0;
+                    total.carbs    += r.macros.carbs||0;
+                    total.fat      += r.macros.fat||0;
+                }
+            });
+
+            document.getElementById("app").innerHTML = `
+                <div class="max-w-2xl mx-auto p-4 pb-10">
+                    <div class="flex items-center gap-3 mb-6 pt-4">
+                        <button onclick="window.goHome()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-xl text-sm">← Wróć</button>
+                        <h2 class="text-xl font-black text-gray-800">🛒 Lista Zakupów</h2>
+                        <button onclick="window.copyFullList()" class="ml-auto bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-4 py-2 rounded-xl text-sm" id="copyBtn">📋 Kopiuj</button>
+                    </div>
+
+                    <div class="space-y-5 mb-6">
+                        ${CATEGORIES.filter(cat => grouped[cat.id]?.length > 0).map(cat => `
+                            <div class="rounded-2xl overflow-hidden border-2 ${cat.light}">
+                                <div class="bg-gradient-to-r ${cat.color} text-white px-4 py-3 font-black text-base">
+                                    ${cat.emoji} ${cat.label}
+                                </div>
+                                <div class="p-3 space-y-4">
+                                    ${grouped[cat.id].map((recipe, ri) => `
+                                        ${ri > 0 ? '<div class="border-t border-gray-200"></div>' : ''}
+                                        <div>
+                                            <p class="font-bold text-gray-700 text-sm mb-2">📋 ${recipe.title}</p>
+                                            <div class="space-y-1.5 pl-2">
+                                                ${recipe.ingredients?.map(ing => `
+                                                    <div class="flex items-center gap-2">
+                                                        <button onclick="window.toggleIng(this)" class="w-5 h-5 rounded border-2 border-gray-300 flex items-center justify-center flex-shrink-0 hover:border-green-400 transition-colors text-xs font-bold"></button>
+                                                        <span class="text-sm text-gray-700 ing-text">${ing}</span>
+                                                    </div>
+                                                `).join('') || ''}
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    ${hasMacros ? `
+                    <div class="rounded-2xl overflow-hidden border-2 border-orange-200 mb-6">
+                        <div class="bg-gradient-to-r from-orange-400 to-red-500 text-white px-4 py-3 font-black">
+                            📊 Makroskładniki — Suma wszystkich posiłków
+                        </div>
+                        <div class="p-4">
+                            <div class="bg-orange-50 rounded-xl p-4 text-center mb-3">
+                                <div class="text-5xl font-black text-orange-600">${total.calories}</div>
+                                <div class="text-sm text-orange-500 font-bold mt-1">KALORII RAZEM</div>
+                            </div>
+                            <div class="grid grid-cols-3 gap-2 mb-4">
+                                <div class="bg-blue-50 border border-blue-200 p-3 rounded-xl text-center">
+                                    <div class="text-2xl font-black text-blue-600">${total.protein}g</div>
+                                    <div class="text-xs text-blue-500 mt-1">💪 Białko</div>
+                                </div>
+                                <div class="bg-green-50 border border-green-200 p-3 rounded-xl text-center">
+                                    <div class="text-2xl font-black text-green-600">${total.carbs}g</div>
+                                    <div class="text-xs text-green-500 mt-1">🍞 Węglowodany</div>
+                                </div>
+                                <div class="bg-yellow-50 border border-yellow-200 p-3 rounded-xl text-center">
+                                    <div class="text-2xl font-black text-yellow-600">${total.fat}g</div>
+                                    <div class="text-xs text-yellow-500 mt-1">🧈 Tłuszcze</div>
+                                </div>
+                            </div>
+                            ${cart.filter(r=>r.macros).length > 1 ? `
+                            <div class="border-t border-orange-200 pt-3">
+                                <p class="text-xs font-bold text-gray-500 mb-2">Podział per przepis:</p>
+                                ${cart.filter(r=>r.macros).map(r => {
+                                    const cat = CATEGORIES.find(c=>c.id===r.categoryId);
+                                    return `<div class="flex justify-between text-xs text-gray-600 py-1.5 border-b border-gray-100">
+                                        <span>${cat?.emoji} ${r.title}</span>
+                                        <span class="font-bold">${r.macros.calories} kcal · ${r.macros.protein}g B · ${r.macros.carbs}g W · ${r.macros.fat}g T</span>
+                                    </div>`;
+                                }).join('')}
+                            </div>` : ''}
+                        </div>
+                    </div>` : ''}
+
+                    <button onclick="window.clearCartAndHome()"
+                        class="w-full bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-3 rounded-xl text-sm transition-all">
+                        🗑️ Wyczyść koszyk i zacznij od nowa
+                    </button>
+                </div>
+            `;
+        };
+
+        window.toggleIng = function(btn) {
+            const text = btn.parentElement.querySelector('.ing-text');
+            if (btn.classList.contains('checked')) {
+                btn.classList.remove('checked','bg-green-500','border-green-500','text-white');
+                btn.textContent = '';
+                if (text) { text.classList.remove('line-through','text-gray-400'); text.classList.add('text-gray-700'); }
+            } else {
+                btn.classList.add('checked','bg-green-500','border-green-500','text-white');
+                btn.textContent = '✓';
+                if (text) { text.classList.add('line-through','text-gray-400'); text.classList.remove('text-gray-700'); }
             }
         };
 
-        // =============================================
-        // PRZETWARZANIE OCR + GPT
-        // =============================================
+        window.copyFullList = async function() {
+            let text = "🛒 LISTA ZAKUPÓW\n═══════════════════════\n\n";
+            const grouped = {};
+            CATEGORIES.forEach(cat => { grouped[cat.id] = []; });
+            cart.forEach(r => { if (grouped[r.categoryId]) grouped[r.categoryId].push(r); });
+            CATEGORIES.filter(cat => grouped[cat.id]?.length > 0).forEach(cat => {
+                text += cat.emoji + " " + cat.label.toUpperCase() + "\n" + "─".repeat(28) + "\n";
+                grouped[cat.id].forEach(recipe => {
+                    text += "  📋 " + recipe.title + "\n";
+                    recipe.ingredients?.forEach(ing => { text += "     • " + ing + "\n"; });
+                    text += "\n";
+                });
+            });
+            const total = { calories:0, protein:0, carbs:0, fat:0 };
+            let hasMacros = false;
+            cart.forEach(r => { if (r.macros) { hasMacros=true; total.calories+=r.macros.calories||0; total.protein+=r.macros.protein||0; total.carbs+=r.macros.carbs||0; total.fat+=r.macros.fat||0; } });
+            if (hasMacros) {
+                text += "📊 MAKROSKŁADNIKI RAZEM\n" + "─".repeat(28) + "\n";
+                text += "🔥 Kalorie: " + total.calories + " kcal\n";
+                text += "💪 Białko: " + total.protein + "g\n";
+                text += "🍞 Węglowodany: " + total.carbs + "g\n";
+                text += "🧈 Tłuszcze: " + total.fat + "g\n\n";
+            }
+            text += "─────────────────────\nWygenerowano: " + new Date().toLocaleString('pl-PL') + "\nLista Zakupów AI 🤖";
+            try {
+                await navigator.clipboard.writeText(text);
+                const btn = document.getElementById("copyBtn");
+                if (btn) { btn.textContent = "✅ Skopiowano!"; btn.classList.replace("bg-indigo-500","bg-green-500"); setTimeout(()=>{ btn.textContent="📋 Kopiuj"; btn.classList.replace("bg-green-500","bg-indigo-500"); },2000); }
+            } catch(e) { alert("Błąd kopiowania"); }
+        };
+
+        window.clearCartAndHome = function() { if (confirm("Wyczyścić koszyk?")) { cart=[]; renderHome(); } };
+
+        // ── OCR + GPT ─────────────────────────────────────────
         async function processQueue() {
             if (isProcessing || processingQueue.length === 0) return;
             isProcessing = true;
             const total = processingQueue.length;
             let done = 0;
-
             while (processingQueue.length > 0) {
                 const file = processingQueue.shift();
                 done++;
                 updateQueueProgress(done, total);
-                document.getElementById("queueInfo").textContent = `Przetwarzanie: ${file.name}`;
-                try {
-                    await processImage(file);
-                    if (processingQueue.length > 0) await sleep(500);
-                } catch (e) {
-                    console.error(e);
-                }
+                const qi = document.getElementById("queueInfo");
+                if (qi) qi.textContent = "Przetwarzanie: " + file.name;
+                try { await processImage(file); if (processingQueue.length > 0) await sleep(500); } catch(e) { console.error(e); }
             }
-
-            setTimeout(() => {
-                const el = document.getElementById("queueProgress");
-                if (el) el.classList.add("hidden");
-            }, 2000);
-
+            setTimeout(() => { const el=document.getElementById("queueProgress"); if(el) el.classList.add("hidden"); }, 2000);
             isProcessing = false;
             const inp = document.getElementById("imageInput");
             if (inp) inp.value = "";
@@ -342,236 +502,46 @@
             showProgress("🔍 OCR...");
             try {
                 const { data: { text } } = await Tesseract.recognize(file, "pol+eng", {
-                    logger: m => {
-                        if (m.status === "recognizing text") {
-                            showProgress(`🔍 OCR: ${Math.round(m.progress * 100)}% — ${file.name}`);
-                        }
-                    }
+                    logger: m => { if (m.status==="recognizing text") showProgress("🔍 OCR: " + Math.round(m.progress*100) + "% — " + file.name); }
                 });
-
-                if (!text || text.trim().length < 10) {
-                    showError(`Pominięto: ${file.name} (brak tekstu)`);
-                    await sleep(2000);
-                    hideProgress();
-                    return;
-                }
-
+                if (!text || text.trim().length < 10) { showError("Pominięto: " + file.name + " (brak tekstu)"); await sleep(2000); hideProgress(); return; }
                 showProgress("🤖 Analiza AI...");
                 await processWithGPT(text, file.name);
-            } catch (e) {
-                showError(`Błąd (${file.name}): ${e.message}`);
-                await sleep(3000);
-                hideProgress();
-            }
+            } catch(e) { showError("Błąd (" + file.name + "): " + e.message); await sleep(3000); hideProgress(); }
         }
 
-        async function processWithGPT(ocrText, filename = "") {
-            const response = await fetch("/api/process-recipe", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ ocrText })
-            });
-
+        async function processWithGPT(ocrText, filename) {
+            const response = await fetch("/api/process-recipe", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ocrText}) });
             const result = await response.json();
             if (!response.ok || !result.success) throw new Error(result.error || "Błąd serwera");
-            if (!result.ingredients?.length) {
-                showError(`Pominięto ${filename}: brak składników`);
-                await sleep(2000);
-                hideProgress();
-                return;
-            }
-
-            // Zapisz do Firebase
-            const recipeData = {
-                title: result.title || filename || `Przepis ${recipeIdCounter++}`,
-                ingredients: result.ingredients,
-                macros: result.macros || null,
-                category: currentCategory.id,
-                createdAt: new Date().toISOString()
-            };
-
+            if (!result.ingredients?.length) { showError("Pominięto " + filename + ": brak składników"); await sleep(2000); hideProgress(); return; }
+            const recipeData = { title: result.title || filename || "Przepis " + recipeIdCounter++, ingredients: result.ingredients, macros: result.macros||null, category: currentCategory.id, createdAt: new Date().toISOString() };
             const docRef = await addDoc(collection(db, "recipes"), recipeData);
             categoryRecipes.push({ firebaseId: docRef.id, ...recipeData });
             hideProgress();
-            renderRecipes();
+            renderCategoryRecipes();
         }
 
-        // =============================================
-        // LISTA ZAKUPÓW
-        // =============================================
-        window.generateShoppingList = function() {
-            const selected = categoryRecipes.filter(r => selectedRecipes.has(r.firebaseId));
-            const map = new Map();
-
-            selected.forEach(r => {
-                r.ingredients?.forEach(ing => {
-                    const norm = ing.toLowerCase().trim();
-                    let found = false;
-                    for (let [key] of map.entries()) {
-                        const b1 = key.toLowerCase().replace(/\d+\s*(g|ml|kg|szt)/gi, "").trim();
-                        const b2 = norm.replace(/\d+\s*(g|ml|kg|szt)/gi, "").trim();
-                        if (b1 === b2 || b1.includes(b2) || b2.includes(b1)) {
-                            map.set(key, (map.get(key) || 1) + 1);
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found) map.set(ing, 1);
-                });
-            });
-
-            shoppingList = Array.from(map.entries()).map(([name, count], i) => ({
-                id: i,
-                name: count > 1 ? `${name} (x${count})` : name,
-                checked: false
-            }));
-
-            document.getElementById("resultsSection").classList.remove("hidden");
-            renderShoppingList();
-            renderMacrosSummary();
-        };
-
-        function renderShoppingList() {
-            const container = document.getElementById("shoppingList");
-            if (!shoppingList.length) {
-                container.innerHTML = '<p class="text-gray-400 text-center py-4">Brak produktów</p>';
-                return;
-            }
-            const left = shoppingList.filter(i => !i.checked).length;
-            container.innerHTML = `
-                <div class="space-y-2">
-                    ${shoppingList.map(item => `
-                        <div class="flex items-center gap-3 p-3 rounded-lg ${item.checked ? "bg-green-100 line-through text-green-700" : "bg-white"} shadow-sm">
-                            <button onclick="window.toggleItem(${item.id})"
-                                class="w-6 h-6 rounded border-2 flex items-center justify-center flex-shrink-0 ${item.checked ? "bg-green-500 border-green-500 text-white" : "border-gray-400"}">
-                                ${item.checked ? "✓" : ""}
-                            </button>
-                            <span class="flex-1">${item.name}</span>
-                        </div>
-                    `).join("")}
-                </div>
-                <div class="mt-4 pt-3 border-t text-center font-bold text-gray-600">
-                    🛒 ${left} / ${shoppingList.length} do kupienia
-                </div>
-            `;
-        }
-
-        function renderMacrosSummary() {
-            const container = document.getElementById("macrosSummary");
-            const selected = categoryRecipes.filter(r => selectedRecipes.has(r.firebaseId));
-            const total = { calories: 0, protein: 0, carbs: 0, fat: 0 };
-            let hasAny = false;
-
-            selected.forEach(r => {
-                if (r.macros) {
-                    hasAny = true;
-                    total.calories += r.macros.calories || 0;
-                    total.protein += r.macros.protein || 0;
-                    total.carbs += r.macros.carbs || 0;
-                    total.fat += r.macros.fat || 0;
-                }
-            });
-
-            if (!hasAny) {
-                container.innerHTML = '<p class="text-gray-400 text-center py-4">Brak danych makro</p>';
-                return;
-            }
-
-            container.innerHTML = `
-                <div class="space-y-3">
-                    <div class="bg-gradient-to-r from-orange-400 to-red-400 text-white p-4 rounded-xl text-center">
-                        <div class="text-4xl font-black">${total.calories}</div>
-                        <div class="text-sm opacity-90">KALORII RAZEM</div>
-                    </div>
-                    <div class="grid grid-cols-3 gap-2">
-                        <div class="bg-blue-100 p-3 rounded-lg text-center">
-                            <div class="text-xl font-bold text-blue-700">${total.protein}g</div>
-                            <div class="text-xs text-blue-600">💪 Białko</div>
-                        </div>
-                        <div class="bg-green-100 p-3 rounded-lg text-center">
-                            <div class="text-xl font-bold text-green-700">${total.carbs}g</div>
-                            <div class="text-xs text-green-600">🍞 Węgle</div>
-                        </div>
-                        <div class="bg-yellow-100 p-3 rounded-lg text-center">
-                            <div class="text-xl font-bold text-yellow-700">${total.fat}g</div>
-                            <div class="text-xs text-yellow-600">🧈 Tłuszcz</div>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
-
-        window.toggleItem = function(id) {
-            const item = shoppingList.find(i => i.id === id);
-            if (item) { item.checked = !item.checked; renderShoppingList(); }
-        };
-
-        window.copyShoppingList = async function() {
-            let text = "🛒 LISTA ZAKUPÓW\n═══════════════════════\n\n";
-            const unchecked = shoppingList.filter(i => !i.checked);
-            const checked = shoppingList.filter(i => i.checked);
-            if (unchecked.length) {
-                text += "📋 DO KUPIENIA:\n";
-                unchecked.forEach((item, i) => { text += `${i + 1}. ${item.name}\n`; });
-                text += "\n";
-            }
-            if (checked.length) {
-                text += "✅ KUPIONE:\n";
-                checked.forEach((item, i) => { text += `${i + 1}. ${item.name}\n`; });
-            }
-            try {
-                await navigator.clipboard.writeText(text);
-                const btn = document.getElementById("copyBtn");
-                btn.textContent = "✅ Skopiowano!";
-                btn.classList.replace("bg-indigo-500", "bg-green-500");
-                setTimeout(() => {
-                    btn.textContent = "📋 Kopiuj";
-                    btn.classList.replace("bg-green-500", "bg-indigo-500");
-                }, 2000);
-            } catch (e) {
-                alert("Błąd kopiowania");
-            }
-        };
-
-        // =============================================
-        // NAWIGACJA
-        // =============================================
+        // ── HELPERS ───────────────────────────────────────────
         window.goHome = function() { renderHome(); };
 
-        // =============================================
-        // HELPERS
-        // =============================================
         function showProgress(text) {
-            const el = document.getElementById("progress");
-            const txt = document.getElementById("progressText");
-            if (el) el.classList.remove("hidden");
-            if (txt) txt.textContent = text;
-            const err = document.getElementById("error");
-            if (err) err.classList.add("hidden");
+            const el=document.getElementById("progress"); if(el) el.classList.remove("hidden");
+            const t=document.getElementById("progressText"); if(t) t.textContent=text;
+            const err=document.getElementById("errorBox"); if(err) err.classList.add("hidden");
         }
-
-        function hideProgress() {
-            const el = document.getElementById("progress");
-            if (el) el.classList.add("hidden");
-        }
-
+        function hideProgress() { const el=document.getElementById("progress"); if(el) el.classList.add("hidden"); }
         function showError(text) {
-            const el = document.getElementById("error");
-            const txt = document.getElementById("errorText");
-            if (el) el.classList.remove("hidden");
-            if (txt) txt.textContent = text;
+            const el=document.getElementById("errorBox"); if(el) el.classList.remove("hidden");
+            const t=document.getElementById("errorText"); if(t) t.textContent=text;
             hideProgress();
         }
-
         function updateQueueProgress(current, total) {
-            const pct = total > 0 ? (current / total) * 100 : 0;
-            const bar = document.getElementById("queueBar");
-            const status = document.getElementById("queueStatus");
-            if (bar) bar.style.width = pct + "%";
-            if (status) status.textContent = `${current} / ${total}`;
+            const pct = total>0 ? (current/total)*100 : 0;
+            const bar=document.getElementById("queueBar"); if(bar) bar.style.width=pct+"%";
+            const s=document.getElementById("queueStatus"); if(s) s.textContent=current+" / "+total;
         }
-
-        function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+        function sleep(ms) { return new Promise(r=>setTimeout(r,ms)); }
     </script>
 </head>
 <body class="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen">
