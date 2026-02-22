@@ -34,17 +34,50 @@
         let currentCategory = null;
         let categoryRecipes = [];
         let localSelected = new Set();
+        // mapa firebaseId -> dostosowane kcal (tymczasowo)
+        let customKcal = {};
         let isProcessing = false;
         let processingQueue = [];
         let recipeIdCounter = 1;
 
         window.addEventListener("DOMContentLoaded", () => { renderHome(); });
 
+        // ── SKALOWANIE PRZEPISU ───────────────────────────────
+        function scaleRecipe(recipe, targetKcal) {
+            if (!recipe.macros?.calories || recipe.macros.calories === 0) return recipe;
+            const ratio = targetKcal / recipe.macros.calories;
+
+            // Skaluj składniki — znajdź liczby i pomnóż
+            const scaledIngredients = recipe.ingredients.map(ing => {
+                return ing.replace(/(\d+(?:[.,]\d+)?)/g, (match) => {
+                    const num = parseFloat(match.replace(',', '.'));
+                    const scaled = Math.round(num * ratio * 10) / 10;
+                    return String(scaled).replace('.', ',');
+                });
+            });
+
+            return {
+                ...recipe,
+                ingredients: scaledIngredients,
+                macros: {
+                    calories: Math.round(recipe.macros.calories * ratio),
+                    protein:  Math.round((recipe.macros.protein  || 0) * ratio * 10) / 10,
+                    carbs:    Math.round((recipe.macros.carbs    || 0) * ratio * 10) / 10,
+                    fat:      Math.round((recipe.macros.fat      || 0) * ratio * 10) / 10,
+                },
+                _scaled: true,
+                _originalKcal: recipe.macros.calories,
+                _targetKcal: targetKcal,
+                _ratio: ratio
+            };
+        }
+
         // ── HOME ──────────────────────────────────────────────
         function renderHome() {
             currentCategory = null;
             categoryRecipes = [];
             localSelected = new Set();
+            customKcal = {};
 
             document.getElementById("app").innerHTML = `
                 <div class="max-w-2xl mx-auto p-4 pb-10">
@@ -66,8 +99,9 @@
                         <div class="space-y-1">
                             ${cart.map(r => {
                                 const cat = CATEGORIES.find(c => c.id === r.categoryId);
+                                const kcalInfo = r._scaled ? ` <span class="text-orange-500 font-bold">(${r._targetKcal} kcal ⚡)</span>` : '';
                                 return `<div class="flex items-center justify-between text-sm py-0.5">
-                                    <span class="text-green-700">${cat?.emoji || ''} <span class="font-semibold">${r.title}</span> <span class="text-green-500 text-xs">(${cat?.label})</span></span>
+                                    <span class="text-green-700">${cat?.emoji || ''} <span class="font-semibold">${r.title}</span>${kcalInfo}</span>
                                     <button onclick="window.removeFromCart('${r.firebaseId}')" class="text-red-400 hover:text-red-600 text-xs ml-2 font-bold">✕</button>
                                 </div>`;
                             }).join('')}
@@ -143,11 +177,53 @@
                 : "text-sm font-bold text-gray-400 bg-gray-100 px-3 py-1 rounded-full";
         }
 
+        // ── DOSTOSUJ KCAL ─────────────────────────────────────
+        window.adjustKcal = function(firebaseId, event) {
+            event.stopPropagation();
+            const recipe = categoryRecipes.find(r => r.firebaseId === firebaseId);
+            if (!recipe) return;
+            if (!recipe.macros?.calories) {
+                alert("Ten przepis nie ma danych o kaloriach — nie można skalować.");
+                return;
+            }
+
+            const currentKcal = customKcal[firebaseId] || recipe.macros.calories;
+            const input = prompt(
+                `⚡ Dostosuj kalorie dla:\n"${recipe.title}"\n\nObecnie: ${recipe.macros.calories} kcal (oryginał)\nAktualnie ustawione: ${currentKcal} kcal\n\nPodaj docelową liczbę kalorii:`,
+                currentKcal
+            );
+
+            if (input === null) return; // anulowano
+            const targetKcal = parseInt(input);
+            if (isNaN(targetKcal) || targetKcal <= 0) {
+                alert("Podaj prawidłową liczbę kalorii!");
+                return;
+            }
+
+            if (targetKcal === recipe.macros.calories) {
+                delete customKcal[firebaseId];
+            } else {
+                customKcal[firebaseId] = targetKcal;
+            }
+
+            // Jeśli przepis jest już w koszyku — zaktualizuj go
+            if (isInCart(firebaseId)) {
+                const idx = cart.findIndex(r => r.firebaseId === firebaseId);
+                if (idx >= 0) {
+                    const scaled = scaleRecipe(recipe, targetKcal);
+                    cart[idx] = { ...scaled, categoryId: currentCategory.id };
+                }
+            }
+
+            renderCategoryRecipes();
+        };
+
         // ── WIDOK KATEGORII ───────────────────────────────────
         window.openCategory = async function(categoryId) {
             currentCategory = CATEGORIES.find(c => c.id === categoryId);
             categoryRecipes = [];
             localSelected = new Set();
+            customKcal = {};
 
             document.getElementById("app").innerHTML = `
                 <div class="max-w-2xl mx-auto p-4 pb-28">
@@ -200,7 +276,6 @@
                     </div>
                 </div>
 
-                <!-- Sticky bottom bar -->
                 <div id="stickyBar" class="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-gray-200 p-4 hidden">
                     <div class="max-w-2xl mx-auto">
                         <button onclick="window.addSelectedToCart()"
@@ -262,37 +337,71 @@
             container.innerHTML = categoryRecipes.map(r => {
                 const inCart = isInCart(r.firebaseId);
                 const selected = localSelected.has(r.firebaseId);
+                const targetKcal = customKcal[r.firebaseId];
+                const displayRecipe = targetKcal ? scaleRecipe(r, targetKcal) : r;
+                const hasKcal = !!r.macros?.calories;
+
                 return `
-                <div onclick="window.toggleLocalSelect('${r.firebaseId}')"
-                    class="p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                        inCart    ? 'border-green-400 bg-green-50' :
-                        selected  ? 'border-indigo-400 bg-indigo-50 shadow-md' :
-                                    'border-gray-200 bg-white hover:border-gray-300'
-                    }">
-                    <div class="flex justify-between items-start">
-                        <div class="flex-1 pr-2">
-                            <div class="flex items-center gap-2 flex-wrap">
-                                <h3 class="font-bold text-gray-800 text-sm">${r.title}</h3>
-                                ${inCart ? '<span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold">✓ w koszyku</span>' : ''}
+                <div class="rounded-xl border-2 overflow-hidden transition-all ${
+                    inCart   ? 'border-green-400 bg-green-50' :
+                    selected ? 'border-indigo-400 bg-indigo-50 shadow-md' :
+                               'border-gray-200 bg-white hover:border-gray-300'
+                }">
+                    <!-- Górna część — klikalny obszar zaznaczenia -->
+                    <div onclick="window.toggleLocalSelect('${r.firebaseId}')" class="p-4 cursor-pointer">
+                        <div class="flex justify-between items-start">
+                            <div class="flex-1 pr-2">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <h3 class="font-bold text-gray-800 text-sm">${r.title}</h3>
+                                    ${inCart ? '<span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold">✓ w koszyku</span>' : ''}
+                                    ${targetKcal ? `<span class="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold">⚡ ${targetKcal} kcal</span>` : ''}
+                                </div>
+                                <p class="text-xs text-gray-500 mt-1">📋 ${r.ingredients?.length || 0} składników</p>
                             </div>
-                            <p class="text-xs text-gray-500 mt-1">📋 ${r.ingredients?.length || 0} składników</p>
+                            <div class="flex items-center gap-2 flex-shrink-0">
+                                <button onclick="window.deleteRecipe('${r.firebaseId}', event)" class="text-red-300 hover:text-red-500 transition-colors" title="Usuń z bazy">🗑️</button>
+                                <div class="w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold ${
+                                    inCart   ? 'bg-green-500 border-green-500 text-white' :
+                                    selected ? 'bg-indigo-500 border-indigo-500 text-white' :
+                                               'border-gray-300'
+                                }">${inCart || selected ? '✓' : ''}</div>
+                            </div>
                         </div>
-                        <div class="flex items-center gap-2 flex-shrink-0">
-                            <button onclick="window.deleteRecipe('${r.firebaseId}', event)" class="text-red-300 hover:text-red-500 transition-colors" title="Usuń z bazy">🗑️</button>
-                            <div class="w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold ${
-                                inCart   ? 'bg-green-500 border-green-500 text-white' :
-                                selected ? 'bg-indigo-500 border-indigo-500 text-white' :
-                                           'border-gray-300'
-                            }">${inCart || selected ? '✓' : ''}</div>
-                        </div>
+
+                        ${displayRecipe.macros ? `
+                            <div class="mt-2 pt-2 border-t grid grid-cols-4 gap-1 text-xs">
+                                <div class="bg-orange-100 p-1.5 rounded text-center">
+                                    <div class="font-bold text-orange-700">${displayRecipe.macros.calories||0}</div>
+                                    <div class="text-orange-500">kcal</div>
+                                </div>
+                                <div class="bg-blue-100 p-1.5 rounded text-center">
+                                    <div class="font-bold text-blue-700">${displayRecipe.macros.protein||0}g</div>
+                                    <div class="text-blue-500">B</div>
+                                </div>
+                                <div class="bg-green-100 p-1.5 rounded text-center">
+                                    <div class="font-bold text-green-700">${displayRecipe.macros.carbs||0}g</div>
+                                    <div class="text-green-500">W</div>
+                                </div>
+                                <div class="bg-yellow-100 p-1.5 rounded text-center">
+                                    <div class="font-bold text-yellow-700">${displayRecipe.macros.fat||0}g</div>
+                                    <div class="text-yellow-500">T</div>
+                                </div>
+                            </div>
+                        ` : ''}
                     </div>
-                    ${r.macros ? `
-                        <div class="mt-2 pt-2 border-t grid grid-cols-4 gap-1 text-xs">
-                            <div class="bg-orange-100 p-1.5 rounded text-center"><div class="font-bold text-orange-700">${r.macros.calories||0}</div><div class="text-orange-500">kcal</div></div>
-                            <div class="bg-blue-100 p-1.5 rounded text-center"><div class="font-bold text-blue-700">${r.macros.protein||0}g</div><div class="text-blue-500">B</div></div>
-                            <div class="bg-green-100 p-1.5 rounded text-center"><div class="font-bold text-green-700">${r.macros.carbs||0}g</div><div class="text-green-500">W</div></div>
-                            <div class="bg-yellow-100 p-1.5 rounded text-center"><div class="font-bold text-yellow-700">${r.macros.fat||0}g</div><div class="text-yellow-500">T</div></div>
-                        </div>` : ''}
+
+                    <!-- Dolna część — przycisk dostosuj kcal -->
+                    ${hasKcal ? `
+                    <div class="px-4 pb-3 pt-0">
+                        <button onclick="window.adjustKcal('${r.firebaseId}', event)"
+                            class="w-full text-xs font-bold py-2 px-3 rounded-lg transition-all ${
+                                targetKcal
+                                    ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+                                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                            }">
+                            ⚡ ${targetKcal ? `Zmień kalorie (${r.macros.calories} kcal → ${targetKcal} kcal)` : `Dostosuj kalorie (${r.macros.calories} kcal)`}
+                        </button>
+                    </div>` : ''}
                 </div>`;
             }).join('');
         }
@@ -311,8 +420,13 @@
 
         window.addSelectedToCart = function() {
             localSelected.forEach(id => {
-                const recipe = categoryRecipes.find(r => r.firebaseId === id);
-                if (recipe && !isInCart(id)) cart.push({ ...recipe, categoryId: currentCategory.id });
+                if (!isInCart(id)) {
+                    const recipe = categoryRecipes.find(r => r.firebaseId === id);
+                    if (!recipe) return;
+                    const targetKcal = customKcal[id];
+                    const finalRecipe = targetKcal ? scaleRecipe(recipe, targetKcal) : recipe;
+                    cart.push({ ...finalRecipe, categoryId: currentCategory.id });
+                }
             });
             localSelected.clear();
             renderCategoryRecipes();
@@ -327,6 +441,7 @@
                 categoryRecipes = categoryRecipes.filter(r => r.firebaseId !== firebaseId);
                 localSelected.delete(firebaseId);
                 cart = cart.filter(r => r.firebaseId !== firebaseId);
+                delete customKcal[firebaseId];
                 renderCategoryRecipes();
                 updateCategoryCartBadge();
             } catch(e) { alert("Błąd usuwania: " + e.message); }
@@ -357,7 +472,7 @@
                     <div class="flex items-center gap-3 mb-6 pt-4">
                         <button onclick="window.goHome()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-xl text-sm">← Wróć</button>
                         <h2 class="text-xl font-black text-gray-800">🛒 Lista Zakupów</h2>
-                        <button onclick="window.copyFullList()" class="ml-auto bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-4 py-2 rounded-xl text-sm" id="copyBtn">📋 Kopiuj</button>
+                        <button onclick="window.copyFullList()" id="copyBtn" class="ml-auto bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-4 py-2 rounded-xl text-sm">📋 Kopiuj</button>
                     </div>
 
                     <div class="space-y-5 mb-6">
@@ -370,7 +485,10 @@
                                     ${grouped[cat.id].map((recipe, ri) => `
                                         ${ri > 0 ? '<div class="border-t border-gray-200"></div>' : ''}
                                         <div>
-                                            <p class="font-bold text-gray-700 text-sm mb-2">📋 ${recipe.title}</p>
+                                            <div class="flex items-center gap-2 mb-2 flex-wrap">
+                                                <p class="font-bold text-gray-700 text-sm">📋 ${recipe.title}</p>
+                                                ${recipe._scaled ? `<span class="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full font-bold">⚡ ${recipe._targetKcal} kcal (×${Math.round(recipe._ratio*100)/100})</span>` : ''}
+                                            </div>
                                             <div class="space-y-1.5 pl-2">
                                                 ${recipe.ingredients?.map(ing => `
                                                     <div class="flex items-center gap-2">
@@ -393,20 +511,20 @@
                         </div>
                         <div class="p-4">
                             <div class="bg-orange-50 rounded-xl p-4 text-center mb-3">
-                                <div class="text-5xl font-black text-orange-600">${total.calories}</div>
+                                <div class="text-5xl font-black text-orange-600">${Math.round(total.calories)}</div>
                                 <div class="text-sm text-orange-500 font-bold mt-1">KALORII RAZEM</div>
                             </div>
                             <div class="grid grid-cols-3 gap-2 mb-4">
                                 <div class="bg-blue-50 border border-blue-200 p-3 rounded-xl text-center">
-                                    <div class="text-2xl font-black text-blue-600">${total.protein}g</div>
+                                    <div class="text-2xl font-black text-blue-600">${Math.round(total.protein*10)/10}g</div>
                                     <div class="text-xs text-blue-500 mt-1">💪 Białko</div>
                                 </div>
                                 <div class="bg-green-50 border border-green-200 p-3 rounded-xl text-center">
-                                    <div class="text-2xl font-black text-green-600">${total.carbs}g</div>
+                                    <div class="text-2xl font-black text-green-600">${Math.round(total.carbs*10)/10}g</div>
                                     <div class="text-xs text-green-500 mt-1">🍞 Węglowodany</div>
                                 </div>
                                 <div class="bg-yellow-50 border border-yellow-200 p-3 rounded-xl text-center">
-                                    <div class="text-2xl font-black text-yellow-600">${total.fat}g</div>
+                                    <div class="text-2xl font-black text-yellow-600">${Math.round(total.fat*10)/10}g</div>
                                     <div class="text-xs text-yellow-500 mt-1">🧈 Tłuszcze</div>
                                 </div>
                             </div>
@@ -415,8 +533,9 @@
                                 <p class="text-xs font-bold text-gray-500 mb-2">Podział per przepis:</p>
                                 ${cart.filter(r=>r.macros).map(r => {
                                     const cat = CATEGORIES.find(c=>c.id===r.categoryId);
+                                    const scaled = r._scaled ? ' ⚡' : '';
                                     return `<div class="flex justify-between text-xs text-gray-600 py-1.5 border-b border-gray-100">
-                                        <span>${cat?.emoji} ${r.title}</span>
+                                        <span>${cat?.emoji} ${r.title}${scaled}</span>
                                         <span class="font-bold">${r.macros.calories} kcal · ${r.macros.protein}g B · ${r.macros.carbs}g W · ${r.macros.fat}g T</span>
                                     </div>`;
                                 }).join('')}
@@ -453,7 +572,8 @@
             CATEGORIES.filter(cat => grouped[cat.id]?.length > 0).forEach(cat => {
                 text += cat.emoji + " " + cat.label.toUpperCase() + "\n" + "─".repeat(28) + "\n";
                 grouped[cat.id].forEach(recipe => {
-                    text += "  📋 " + recipe.title + "\n";
+                    const scaled = recipe._scaled ? " (⚡" + recipe._targetKcal + " kcal)" : "";
+                    text += "  📋 " + recipe.title + scaled + "\n";
                     recipe.ingredients?.forEach(ing => { text += "     • " + ing + "\n"; });
                     text += "\n";
                 });
@@ -463,10 +583,10 @@
             cart.forEach(r => { if (r.macros) { hasMacros=true; total.calories+=r.macros.calories||0; total.protein+=r.macros.protein||0; total.carbs+=r.macros.carbs||0; total.fat+=r.macros.fat||0; } });
             if (hasMacros) {
                 text += "📊 MAKROSKŁADNIKI RAZEM\n" + "─".repeat(28) + "\n";
-                text += "🔥 Kalorie: " + total.calories + " kcal\n";
-                text += "💪 Białko: " + total.protein + "g\n";
-                text += "🍞 Węglowodany: " + total.carbs + "g\n";
-                text += "🧈 Tłuszcze: " + total.fat + "g\n\n";
+                text += "🔥 Kalorie: " + Math.round(total.calories) + " kcal\n";
+                text += "💪 Białko: " + Math.round(total.protein*10)/10 + "g\n";
+                text += "🍞 Węglowodany: " + Math.round(total.carbs*10)/10 + "g\n";
+                text += "🧈 Tłuszcze: " + Math.round(total.fat*10)/10 + "g\n\n";
             }
             text += "─────────────────────\nWygenerowano: " + new Date().toLocaleString('pl-PL') + "\nLista Zakupów AI 🤖";
             try {
@@ -485,8 +605,7 @@
             const total = processingQueue.length;
             let done = 0;
             while (processingQueue.length > 0) {
-                const file = processingQueue.shift();
-                done++;
+                const file = processingQueue.shift(); done++;
                 updateQueueProgress(done, total);
                 const qi = document.getElementById("queueInfo");
                 if (qi) qi.textContent = "Przetwarzanie: " + file.name;
@@ -494,8 +613,7 @@
             }
             setTimeout(() => { const el=document.getElementById("queueProgress"); if(el) el.classList.add("hidden"); }, 2000);
             isProcessing = false;
-            const inp = document.getElementById("imageInput");
-            if (inp) inp.value = "";
+            const inp = document.getElementById("imageInput"); if (inp) inp.value = "";
         }
 
         async function processImage(file) {
@@ -522,7 +640,6 @@
             renderCategoryRecipes();
         }
 
-        // ── HELPERS ───────────────────────────────────────────
         window.goHome = function() { renderHome(); };
 
         function showProgress(text) {
