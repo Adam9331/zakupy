@@ -8,7 +8,7 @@
     <script src="https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, where, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBxS26DGBLPz24OF0V9fZ-99RGQA41hJtE",
@@ -39,21 +39,11 @@
         let processingQueue = [];
         let recipeIdCounter = 1;
 
-        // ── LICZNIK KALORII ───────────────────────────────────
         let dailyLimit = parseInt(localStorage.getItem('dailyKcalLimit') || '2500');
 
-        function getCartKcal() {
-            return cart.reduce((sum, r) => sum + (r.macros?.calories || 0), 0);
-        }
-
-        function getRemaining() {
-            return dailyLimit - getCartKcal();
-        }
-
-        function getProgressPct() {
-            return Math.min(100, Math.round((getCartKcal() / dailyLimit) * 100));
-        }
-
+        function getCartKcal() { return cart.reduce((sum, r) => sum + (r.macros?.calories || 0), 0); }
+        function getRemaining() { return dailyLimit - getCartKcal(); }
+        function getProgressPct() { return Math.min(100, Math.round((getCartKcal() / dailyLimit) * 100)); }
         function getProgressColor() {
             const pct = getProgressPct();
             if (pct >= 100) return { bar: 'bg-red-500', text: 'text-red-600', bg: 'bg-red-50 border-red-300' };
@@ -62,12 +52,7 @@
         }
 
         function renderKcalCounter() {
-            const used = getCartKcal();
-            const remaining = getRemaining();
-            const pct = getProgressPct();
-            const col = getProgressColor();
-            const over = remaining < 0;
-
+            const used = getCartKcal(), remaining = getRemaining(), pct = getProgressPct(), col = getProgressColor(), over = remaining < 0;
             return `
             <div class="mb-5 p-4 ${col.bg} border-2 rounded-2xl">
                 <div class="flex items-center justify-between mb-2">
@@ -83,18 +68,14 @@
                         <p class="text-xs text-gray-500">${over ? 'kcal ponad limit' : 'kcal pozostało'}</p>
                     </div>
                 </div>
-
-                <!-- Progress bar -->
                 <div class="w-full bg-gray-200 rounded-full h-4 overflow-hidden mb-2">
                     <div class="${col.bar} h-4 rounded-full transition-all duration-500" style="width: ${pct}%"></div>
                 </div>
-
                 <div class="flex justify-between text-xs text-gray-500">
                     <span>Zjedzone: <span class="font-bold ${col.text}">${used} kcal</span></span>
                     <span>${pct}% dziennego limitu</span>
                     <span>Limit: <span class="font-bold">${dailyLimit} kcal</span></span>
                 </div>
-
                 ${over ? `<div class="mt-2 text-xs font-bold text-red-600 bg-red-100 px-3 py-1.5 rounded-lg text-center">⚠️ Przekroczono limit o ${Math.abs(remaining)} kcal!</div>` : ''}
                 ${cart.length > 0 ? `
                 <div class="mt-2 pt-2 border-t border-gray-200 space-y-1">
@@ -102,10 +83,7 @@
                         const cat = CATEGORIES.find(c => c.id === r.categoryId);
                         const kcal = r.macros?.calories || 0;
                         if (!kcal) return '';
-                        return `<div class="flex justify-between text-xs text-gray-600">
-                            <span>${cat?.emoji} ${r.title}${r._scaled ? ' ⚡' : ''}</span>
-                            <span class="font-bold">${kcal} kcal</span>
-                        </div>`;
+                        return `<div class="flex justify-between text-xs text-gray-600"><span>${cat?.emoji} ${r.title}${r._scaled ? ' ⚡' : ''}</span><span class="font-bold">${kcal} kcal</span></div>`;
                     }).filter(Boolean).join('')}
                 </div>` : ''}
             </div>`;
@@ -121,40 +99,141 @@
             renderHome();
         };
 
-        // ── SKALOWANIE ────────────────────────────────────────
         function scaleRecipe(recipe, targetKcal) {
             if (!recipe.macros?.calories || recipe.macros.calories === 0) return recipe;
             const ratio = targetKcal / recipe.macros.calories;
-            const scaledIngredients = recipe.ingredients.map(ing =>
-                ing.replace(/(\d+(?:[.,]\d+)?)/g, (match) => {
-                    const num = parseFloat(match.replace(',', '.'));
-                    const scaled = Math.round(num * ratio * 10) / 10;
-                    return String(scaled).replace('.', ',');
-                })
-            );
             return {
                 ...recipe,
-                ingredients: scaledIngredients,
+                ingredients: recipe.ingredients.map(ing => ing.replace(/(\d+(?:[.,]\d+)?)/g, (match) => {
+                    const num = parseFloat(match.replace(',', '.'));
+                    return String(Math.round(num * ratio * 10) / 10).replace('.', ',');
+                })),
                 macros: {
                     calories: Math.round(recipe.macros.calories * ratio),
                     protein:  Math.round((recipe.macros.protein  || 0) * ratio * 10) / 10,
                     carbs:    Math.round((recipe.macros.carbs    || 0) * ratio * 10) / 10,
                     fat:      Math.round((recipe.macros.fat      || 0) * ratio * 10) / 10,
                 },
-                _scaled: true,
-                _originalKcal: recipe.macros.calories,
-                _targetKcal: targetKcal,
-                _ratio: ratio
+                _scaled: true, _originalKcal: recipe.macros.calories, _targetKcal: targetKcal, _ratio: ratio
             };
         }
 
+        // ── MODAL: Potwierdź nazwę po analizie AI ─────────────
+        function showNameConfirmModal(suggestedTitle, onConfirm) {
+            const existing = document.getElementById('nameModal');
+            if (existing) existing.remove();
+
+            const modal = document.createElement('div');
+            modal.id = 'nameModal';
+            modal.className = 'fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4';
+            modal.innerHTML = `
+                <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+                    <div class="flex items-center gap-3 mb-1">
+                        <span class="text-3xl">🤖</span>
+                        <div>
+                            <h3 class="font-black text-gray-800 text-lg">AI nadała nazwę przepisu</h3>
+                            <p class="text-xs text-gray-500">Sprawdź i popraw jeśli trzeba przed zapisem</p>
+                        </div>
+                    </div>
+                    <div class="my-4 bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-xs text-indigo-700">
+                        💡 Tu możesz zmienić nazwę — np. AI mogła napisać "sałatka z kurczakiem" zamiast Twojej własnej nazwy
+                    </div>
+                    <div class="mb-5">
+                        <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">Nazwa przepisu</label>
+                        <input id="modalTitleInput"
+                            class="w-full border-2 border-indigo-300 rounded-xl px-4 py-3 text-gray-800 font-bold text-base focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                            value="${suggestedTitle.replace(/"/g, '&quot;')}" />
+                    </div>
+                    <div class="flex gap-2">
+                        <button id="modalSaveBtn" class="flex-1 bg-indigo-500 hover:bg-indigo-600 text-white font-black py-3 rounded-xl transition-all text-base">
+                            ✅ Zapisz przepis
+                        </button>
+                        <button id="modalCancelBtn" class="bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-3 px-5 rounded-xl transition-all">
+                            Anuluj
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            setTimeout(() => {
+                const inp = document.getElementById('modalTitleInput');
+                if (inp) { inp.focus(); inp.select(); }
+            }, 100);
+
+            document.getElementById('modalSaveBtn').onclick = () => {
+                const title = document.getElementById('modalTitleInput').value.trim() || suggestedTitle;
+                modal.remove();
+                onConfirm(title);
+            };
+            document.getElementById('modalCancelBtn').onclick = () => {
+                modal.remove();
+                onConfirm(null);
+            };
+            document.getElementById('modalTitleInput').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') document.getElementById('modalSaveBtn').click();
+            });
+        }
+
+        // ── MODAL: Edytuj nazwę istniejącego przepisu ─────────
+        window.editRecipeName = async function(firebaseId, currentTitle, event) {
+            event.stopPropagation();
+            const existing = document.getElementById('editModal');
+            if (existing) existing.remove();
+
+            const modal = document.createElement('div');
+            modal.id = 'editModal';
+            modal.className = 'fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4';
+            modal.innerHTML = `
+                <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="text-3xl">✏️</span>
+                        <div>
+                            <h3 class="font-black text-gray-800 text-lg">Zmień nazwę przepisu</h3>
+                            <p class="text-xs text-gray-500">Edytuj i zatwierdź</p>
+                        </div>
+                    </div>
+                    <div class="mb-5">
+                        <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">Nazwa przepisu</label>
+                        <input id="editTitleInput"
+                            class="w-full border-2 border-indigo-300 rounded-xl px-4 py-3 text-gray-800 font-bold text-base focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                            value="${currentTitle.replace(/"/g, '&quot;')}" />
+                    </div>
+                    <div class="flex gap-2">
+                        <button id="editSaveBtn" class="flex-1 bg-indigo-500 hover:bg-indigo-600 text-white font-black py-3 rounded-xl transition-all text-base">
+                            ✅ Zapisz
+                        </button>
+                        <button id="editCancelBtn" class="bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-3 px-5 rounded-xl transition-all">
+                            Anuluj
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            setTimeout(() => { const inp = document.getElementById('editTitleInput'); if (inp) { inp.focus(); inp.select(); } }, 100);
+
+            document.getElementById('editSaveBtn').onclick = async () => {
+                const newTitle = document.getElementById('editTitleInput').value.trim();
+                if (!newTitle) { alert('Nazwa nie może być pusta!'); return; }
+                modal.remove();
+                try {
+                    await updateDoc(doc(db, "recipes", firebaseId), { title: newTitle });
+                    const idx = categoryRecipes.findIndex(r => r.firebaseId === firebaseId);
+                    if (idx >= 0) categoryRecipes[idx].title = newTitle;
+                    const cartIdx = cart.findIndex(r => r.firebaseId === firebaseId);
+                    if (cartIdx >= 0) cart[cartIdx].title = newTitle;
+                    renderCategoryRecipes();
+                } catch(e) { alert('Błąd zapisu: ' + e.message); }
+            };
+            document.getElementById('editCancelBtn').onclick = () => modal.remove();
+            document.getElementById('editTitleInput').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') document.getElementById('editSaveBtn').click();
+            });
+        };
+
         // ── HOME ──────────────────────────────────────────────
         function renderHome() {
-            currentCategory = null;
-            categoryRecipes = [];
-            localSelected = new Set();
-            customKcal = {};
-
+            currentCategory = null; categoryRecipes = []; localSelected = new Set(); customKcal = {};
             document.getElementById("app").innerHTML = `
                 <div class="max-w-2xl mx-auto p-4 pb-10">
                     <div class="text-center mb-5 pt-5">
@@ -162,11 +241,7 @@
                         <h1 class="text-3xl font-black text-gray-800 tracking-tight">Lista Zakupów AI</h1>
                         <p class="text-gray-500 mt-1 text-sm">Wybierz przepisy z kategorii, potem wygeneruj listę</p>
                     </div>
-
-                    <!-- LICZNIK KALORII -->
                     ${renderKcalCounter()}
-
-                    <!-- KOSZYK -->
                     <div id="cartBanner" class="${cart.length ? '' : 'hidden'} mb-5 p-4 bg-green-50 border-2 border-green-300 rounded-2xl">
                         <div class="flex items-center justify-between mb-2">
                             <p class="font-black text-green-800">🧺 Koszyk: ${cart.length} przepisów</p>
@@ -187,8 +262,6 @@
                             }).join('')}
                         </div>
                     </div>
-
-                    <!-- KATEGORIE -->
                     <div class="grid grid-cols-1 gap-3 mb-5">
                         ${CATEGORIES.map(cat => {
                             const inCart = cart.filter(r => r.categoryId === cat.id).length;
@@ -207,10 +280,8 @@
                             </button>`;
                         }).join('')}
                     </div>
-
                     ${cart.length ? `
-                    <button onclick="window.goToResults()"
-                        class="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black py-5 rounded-2xl shadow-xl text-lg hover:opacity-90 transition-all">
+                    <button onclick="window.goToResults()" class="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black py-5 rounded-2xl shadow-xl text-lg hover:opacity-90 transition-all">
                         🛒 Generuj listę zakupów (${cart.length} przepisów · ${getCartKcal()} kcal)
                     </button>` : `
                     <div class="text-center text-gray-400 py-6 border-2 border-dashed border-gray-200 rounded-2xl">
@@ -227,24 +298,16 @@
                 const snap = await getDocs(q);
                 const el = document.getElementById("count-" + cat.id);
                 if (el) el.textContent = snap.size + " przepisów w bazie";
-            } catch(e) {
-                const el = document.getElementById("count-" + cat.id);
-                if (el) el.textContent = "błąd";
-            }
+            } catch(e) { const el = document.getElementById("count-" + cat.id); if (el) el.textContent = "błąd"; }
         }
 
         function getCartSummary() {
             if (!cart.length) return '';
             const byCat = {};
-            cart.forEach(r => {
-                const cat = CATEGORIES.find(c => c.id === r.categoryId);
-                const label = cat ? cat.label : r.categoryId;
-                byCat[label] = (byCat[label] || 0) + 1;
-            });
+            cart.forEach(r => { const cat = CATEGORIES.find(c => c.id === r.categoryId); const label = cat ? cat.label : r.categoryId; byCat[label] = (byCat[label] || 0) + 1; });
             return Object.entries(byCat).map(([k,v]) => k + ": " + v).join(' · ');
         }
 
-        // ── KOSZYK ────────────────────────────────────────────
         window.clearCart = function() { if (confirm("Wyczyścić koszyk?")) { cart = []; renderHome(); } };
         window.removeFromCart = function(id) { cart = cart.filter(r => r.firebaseId !== id); renderHome(); };
         function isInCart(id) { return cart.some(r => r.firebaseId === id); }
@@ -252,21 +315,13 @@
         function updateCategoryCartBadge() {
             const el = document.getElementById("cartBadge");
             if (!el) return;
-            const count = cart.length;
-            const kcal = getCartKcal();
+            const count = cart.length, kcal = getCartKcal();
             el.textContent = count > 0 ? "🧺 " + count + " · " + kcal + " kcal" : "🧺 Koszyk pusty";
-            el.className = count > 0
-                ? "text-sm font-bold text-green-700 bg-green-100 px-3 py-1 rounded-full"
-                : "text-sm font-bold text-gray-400 bg-gray-100 px-3 py-1 rounded-full";
+            el.className = count > 0 ? "text-sm font-bold text-green-700 bg-green-100 px-3 py-1 rounded-full" : "text-sm font-bold text-gray-400 bg-gray-100 px-3 py-1 rounded-full";
         }
 
-        // Mini licznik w widoku kategorii
         function renderMiniCounter() {
-            const used = getCartKcal();
-            const remaining = getRemaining();
-            const pct = getProgressPct();
-            const col = getProgressColor();
-            const over = remaining < 0;
+            const used = getCartKcal(), remaining = getRemaining(), pct = getProgressPct(), col = getProgressColor(), over = remaining < 0;
             const el = document.getElementById("miniCounter");
             if (!el) return;
             el.innerHTML = `
@@ -276,57 +331,34 @@
                             <div class="${col.bar} h-2 rounded-full transition-all duration-500" style="width:${pct}%"></div>
                         </div>
                     </div>
-                    <div class="text-xs font-bold ${col.text} whitespace-nowrap">
-                        🔥 ${used}/${dailyLimit} kcal
-                        ${over ? '<span class="text-red-500"> ⚠️</span>' : ''}
-                    </div>
-                </div>
-            `;
+                    <div class="text-xs font-bold ${col.text} whitespace-nowrap">🔥 ${used}/${dailyLimit} kcal${over ? ' ⚠️' : ''}</div>
+                </div>`;
         }
 
-        // ── DOSTOSUJ KCAL ─────────────────────────────────────
         window.adjustKcal = function(firebaseId, event) {
             event.stopPropagation();
             const recipe = categoryRecipes.find(r => r.firebaseId === firebaseId);
             if (!recipe) return;
             if (!recipe.macros?.calories) { alert("Brak danych o kaloriach — nie można skalować."); return; }
-
             const currentKcal = customKcal[firebaseId] || recipe.macros.calories;
             const remaining = getRemaining();
-            const suggestion = isInCart(firebaseId)
-                ? Math.max(50, currentKcal + remaining)
-                : Math.max(50, currentKcal + remaining);
-
-            const input = prompt(
-                `⚡ Dostosuj kalorie:\n"${recipe.title}"\n\nOryginał: ${recipe.macros.calories} kcal\nAktualnie: ${currentKcal} kcal\nPozostało w limicie: ${remaining} kcal\n\nPodaj docelowe kalorie:`,
-                customKcal[firebaseId] || recipe.macros.calories
-            );
+            const input = prompt(`⚡ Dostosuj kalorie:\n"${recipe.title}"\n\nOryginał: ${recipe.macros.calories} kcal\nAktualnie: ${currentKcal} kcal\nPozostało w limicie: ${remaining} kcal\n\nPodaj docelowe kalorie:`, customKcal[firebaseId] || recipe.macros.calories);
             if (input === null) return;
             const targetKcal = parseInt(input);
             if (isNaN(targetKcal) || targetKcal <= 0) { alert("Podaj prawidłową liczbę!"); return; }
-
             if (targetKcal === recipe.macros.calories) delete customKcal[firebaseId];
             else customKcal[firebaseId] = targetKcal;
-
             if (isInCart(firebaseId)) {
                 const idx = cart.findIndex(r => r.firebaseId === firebaseId);
-                if (idx >= 0) {
-                    const scaled = scaleRecipe(recipe, targetKcal);
-                    cart[idx] = { ...scaled, categoryId: currentCategory.id };
-                }
+                if (idx >= 0) cart[idx] = { ...scaleRecipe(recipe, targetKcal), categoryId: currentCategory.id };
             }
-            renderCategoryRecipes();
-            updateCategoryCartBadge();
-            renderMiniCounter();
+            renderCategoryRecipes(); updateCategoryCartBadge(); renderMiniCounter();
         };
 
         // ── WIDOK KATEGORII ───────────────────────────────────
         window.openCategory = async function(categoryId) {
             currentCategory = CATEGORIES.find(c => c.id === categoryId);
-            categoryRecipes = [];
-            localSelected = new Set();
-            customKcal = {};
-
+            categoryRecipes = []; localSelected = new Set(); customKcal = {};
             document.getElementById("app").innerHTML = `
                 <div class="max-w-2xl mx-auto p-4 pb-28">
                     <div class="flex items-center gap-3 mb-3 pt-4">
@@ -336,10 +368,7 @@
                         </div>
                         <span id="cartBadge" class="text-sm font-bold text-gray-400 bg-gray-100 px-3 py-1 rounded-full">🧺 Koszyk pusty</span>
                     </div>
-
-                    <!-- Mini licznik kalorii -->
                     <div id="miniCounter" class="mb-4 p-3 bg-white border border-gray-200 rounded-xl shadow-sm"></div>
-
                     <div class="mb-4">
                         <label for="imageInput" class="block w-full bg-gradient-to-r ${currentCategory.color} text-white font-bold py-4 px-6 rounded-xl text-center cursor-pointer shadow-md hover:opacity-90 transition-all">
                             <span class="text-xl mr-2">📸</span> Dodaj screenshot(y) do bazy
@@ -347,7 +376,6 @@
                         </label>
                         <input type="file" id="imageInput" accept="image/*" class="hidden" multiple>
                     </div>
-
                     <div id="queueProgress" class="hidden mb-4 p-4 bg-indigo-50 border-2 border-indigo-200 rounded-xl">
                         <div class="flex items-center justify-between mb-2">
                             <span class="font-bold text-indigo-800">📥 Przetwarzanie</span>
@@ -358,21 +386,17 @@
                         </div>
                         <p class="text-sm text-indigo-600 mt-2" id="queueInfo"></p>
                     </div>
-
                     <div id="progress" class="hidden mb-4 p-4 bg-blue-50 border-2 border-blue-200 rounded-xl text-center">
                         <div class="animate-spin rounded-full h-10 w-10 border-4 border-blue-600 border-t-transparent mx-auto mb-2"></div>
                         <p id="progressText" class="text-blue-700 font-bold text-sm"></p>
                     </div>
-
                     <div id="errorBox" class="hidden mb-4 p-3 bg-red-50 border-2 border-red-200 rounded-xl">
                         <p class="text-red-700 text-sm font-bold">⚠️ <span id="errorText"></span></p>
                     </div>
-
                     <div class="mb-3 flex items-center justify-between">
                         <h3 class="text-sm font-bold text-gray-500">Zaznacz → dodaj do koszyka</h3>
                         <span id="recipeCount" class="bg-gray-100 text-gray-500 px-3 py-1 rounded-full text-xs font-bold">0</span>
                     </div>
-
                     <div id="recipesList" class="space-y-3">
                         <div class="text-center text-gray-400 py-8">
                             <div class="animate-spin rounded-full h-8 w-8 border-4 border-gray-300 border-t-indigo-400 mx-auto mb-3"></div>
@@ -380,17 +404,14 @@
                         </div>
                     </div>
                 </div>
-
                 <div id="stickyBar" class="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-gray-200 p-4 hidden">
                     <div class="max-w-2xl mx-auto">
-                        <button onclick="window.addSelectedToCart()"
-                            class="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black py-4 rounded-2xl shadow-xl text-base hover:opacity-90 transition-all">
+                        <button onclick="window.addSelectedToCart()" class="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black py-4 rounded-2xl shadow-xl text-base hover:opacity-90 transition-all">
                             🧺 Dodaj zaznaczone do koszyka (<span id="selectedCount">0</span>)
                         </button>
                     </div>
                 </div>
             `;
-
             document.getElementById("imageInput").addEventListener("change", function(e) {
                 const files = Array.from(e.target.files);
                 if (!files.length) return;
@@ -399,9 +420,7 @@
                 updateQueueProgress(0, files.length);
                 processQueue();
             });
-
-            updateCategoryCartBadge();
-            renderMiniCounter();
+            updateCategoryCartBadge(); renderMiniCounter();
             await loadCategoryRecipes();
         };
 
@@ -436,6 +455,7 @@
                 const displayRecipe = targetKcal ? scaleRecipe(r, targetKcal) : r;
                 const hasKcal = !!r.macros?.calories;
                 const remaining = getRemaining();
+                const safeTitle = r.title.replace(/'/g, "\\'");
 
                 return `
                 <div class="rounded-xl border-2 overflow-hidden transition-all ${inCart ? 'border-green-400 bg-green-50' : selected ? 'border-indigo-400 bg-indigo-50 shadow-md' : 'border-gray-200 bg-white hover:border-gray-300'}">
@@ -450,7 +470,8 @@
                                 <p class="text-xs text-gray-500 mt-1">📋 ${r.ingredients?.length || 0} składników</p>
                             </div>
                             <div class="flex items-center gap-2 flex-shrink-0">
-                                <button onclick="window.deleteRecipe('${r.firebaseId}', event)" class="text-red-300 hover:text-red-500 transition-colors" title="Usuń z bazy">🗑️</button>
+                                <button onclick="window.editRecipeName('${r.firebaseId}', '${safeTitle}', event)" class="text-indigo-300 hover:text-indigo-600 transition-colors text-lg" title="Zmień nazwę">✏️</button>
+                                <button onclick="window.deleteRecipe('${r.firebaseId}', event)" class="text-red-300 hover:text-red-500 transition-colors text-lg" title="Usuń z bazy">🗑️</button>
                                 <div class="w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold ${inCart ? 'bg-green-500 border-green-500 text-white' : selected ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-gray-300'}">${inCart || selected ? '✓' : ''}</div>
                             </div>
                         </div>
@@ -464,8 +485,7 @@
                     </div>
                     ${hasKcal ? `
                     <div class="px-4 pb-3">
-                        <button onclick="window.adjustKcal('${r.firebaseId}', event)"
-                            class="w-full text-xs font-bold py-2 px-3 rounded-lg transition-all ${targetKcal ? 'bg-orange-100 text-orange-700 hover:bg-orange-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}">
+                        <button onclick="window.adjustKcal('${r.firebaseId}', event)" class="w-full text-xs font-bold py-2 px-3 rounded-lg transition-all ${targetKcal ? 'bg-orange-100 text-orange-700 hover:bg-orange-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}">
                             ⚡ ${targetKcal ? `Zmień (${r.macros.calories} → ${targetKcal} kcal)` : `Dostosuj kalorie (${r.macros.calories} kcal) · zostało ${remaining} kcal`}
                         </button>
                     </div>` : ''}
@@ -474,13 +494,7 @@
         }
 
         window.toggleLocalSelect = function(firebaseId) {
-            if (isInCart(firebaseId)) {
-                cart = cart.filter(r => r.firebaseId !== firebaseId);
-                updateCategoryCartBadge();
-                renderMiniCounter();
-                renderCategoryRecipes();
-                return;
-            }
+            if (isInCart(firebaseId)) { cart = cart.filter(r => r.firebaseId !== firebaseId); updateCategoryCartBadge(); renderMiniCounter(); renderCategoryRecipes(); return; }
             if (localSelected.has(firebaseId)) localSelected.delete(firebaseId);
             else localSelected.add(firebaseId);
             renderCategoryRecipes();
@@ -492,14 +506,10 @@
                     const recipe = categoryRecipes.find(r => r.firebaseId === id);
                     if (!recipe) return;
                     const targetKcal = customKcal[id];
-                    const finalRecipe = targetKcal ? scaleRecipe(recipe, targetKcal) : recipe;
-                    cart.push({ ...finalRecipe, categoryId: currentCategory.id });
+                    cart.push({ ...(targetKcal ? scaleRecipe(recipe, targetKcal) : recipe), categoryId: currentCategory.id });
                 }
             });
-            localSelected.clear();
-            renderCategoryRecipes();
-            updateCategoryCartBadge();
-            renderMiniCounter();
+            localSelected.clear(); renderCategoryRecipes(); updateCategoryCartBadge(); renderMiniCounter();
         };
 
         window.deleteRecipe = async function(firebaseId, event) {
@@ -511,30 +521,20 @@
                 localSelected.delete(firebaseId);
                 cart = cart.filter(r => r.firebaseId !== firebaseId);
                 delete customKcal[firebaseId];
-                renderCategoryRecipes();
-                updateCategoryCartBadge();
-                renderMiniCounter();
+                renderCategoryRecipes(); updateCategoryCartBadge(); renderMiniCounter();
             } catch(e) { alert("Błąd usuwania: " + e.message); }
         };
 
         // ── WYNIKI ────────────────────────────────────────────
         window.goToResults = function() {
             if (!cart.length) { alert("Koszyk jest pusty!"); return; }
-
             const grouped = {};
             CATEGORIES.forEach(cat => { grouped[cat.id] = []; });
             cart.forEach(r => { if (grouped[r.categoryId]) grouped[r.categoryId].push(r); });
-
             const total = { calories:0, protein:0, carbs:0, fat:0 };
             let hasMacros = false;
-            cart.forEach(r => {
-                if (r.macros) { hasMacros=true; total.calories+=r.macros.calories||0; total.protein+=r.macros.protein||0; total.carbs+=r.macros.carbs||0; total.fat+=r.macros.fat||0; }
-            });
-
-            const remaining = getRemaining();
-            const col = getProgressColor();
-            const over = remaining < 0;
-
+            cart.forEach(r => { if (r.macros) { hasMacros=true; total.calories+=r.macros.calories||0; total.protein+=r.macros.protein||0; total.carbs+=r.macros.carbs||0; total.fat+=r.macros.fat||0; } });
+            const remaining = getRemaining(), col = getProgressColor(), over = remaining < 0;
             document.getElementById("app").innerHTML = `
                 <div class="max-w-2xl mx-auto p-4 pb-10">
                     <div class="flex items-center gap-3 mb-5 pt-4">
@@ -542,8 +542,6 @@
                         <h2 class="text-xl font-black text-gray-800">🛒 Lista Zakupów</h2>
                         <button onclick="window.copyFullList()" id="copyBtn" class="ml-auto bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-4 py-2 rounded-xl text-sm">📋 Kopiuj</button>
                     </div>
-
-                    <!-- Podsumowanie kalorii na górze wyników -->
                     <div class="mb-5 p-4 ${col.bg} border-2 rounded-2xl">
                         <div class="flex items-center justify-between mb-2">
                             <p class="font-black text-gray-800">🔥 Podsumowanie kalorii dnia</p>
@@ -557,8 +555,6 @@
                             <span>${over ? `<b class="text-red-600">⚠️ Przekroczono o ${Math.abs(remaining)} kcal</b>` : `<b class="${col.text}">Pozostało: ${remaining} kcal</b>`}</span>
                         </div>
                     </div>
-
-                    <!-- Lista zakupów z podziałem -->
                     <div class="space-y-5 mb-6">
                         ${CATEGORIES.filter(cat => grouped[cat.id]?.length > 0).map(cat => `
                             <div class="rounded-2xl overflow-hidden border-2 ${cat.light}">
@@ -580,21 +576,15 @@
                                                     <div class="flex items-center gap-2">
                                                         <button onclick="window.toggleIng(this)" class="w-5 h-5 rounded border-2 border-gray-300 flex items-center justify-center flex-shrink-0 hover:border-green-400 transition-colors text-xs font-bold"></button>
                                                         <span class="text-sm text-gray-700 ing-text">${ing}</span>
-                                                    </div>
-                                                `).join('') || ''}
+                                                    </div>`).join('') || ''}
                                             </div>
-                                        </div>
-                                    `).join('')}
+                                        </div>`).join('')}
                                 </div>
-                            </div>
-                        `).join('')}
+                            </div>`).join('')}
                     </div>
-
                     ${hasMacros ? `
                     <div class="rounded-2xl overflow-hidden border-2 border-orange-200 mb-6">
-                        <div class="bg-gradient-to-r from-orange-400 to-red-500 text-white px-4 py-3 font-black">
-                            📊 Makroskładniki — Suma wszystkich posiłków
-                        </div>
+                        <div class="bg-gradient-to-r from-orange-400 to-red-500 text-white px-4 py-3 font-black">📊 Makroskładniki — Suma wszystkich posiłków</div>
                         <div class="p-4">
                             <div class="bg-orange-50 rounded-xl p-4 text-center mb-3">
                                 <div class="text-5xl font-black text-orange-600">${Math.round(total.calories)}</div>
@@ -605,38 +595,16 @@
                                 <div class="bg-green-50 border border-green-200 p-3 rounded-xl text-center"><div class="text-2xl font-black text-green-600">${Math.round(total.carbs*10)/10}g</div><div class="text-xs text-green-500 mt-1">🍞 Węglowodany</div></div>
                                 <div class="bg-yellow-50 border border-yellow-200 p-3 rounded-xl text-center"><div class="text-2xl font-black text-yellow-600">${Math.round(total.fat*10)/10}g</div><div class="text-xs text-yellow-500 mt-1">🧈 Tłuszcze</div></div>
                             </div>
-                            ${cart.filter(r=>r.macros).length > 1 ? `
-                            <div class="border-t border-orange-200 pt-3">
-                                <p class="text-xs font-bold text-gray-500 mb-2">Podział per przepis:</p>
-                                ${cart.filter(r=>r.macros).map(r => {
-                                    const cat = CATEGORIES.find(c=>c.id===r.categoryId);
-                                    return `<div class="flex justify-between text-xs text-gray-600 py-1.5 border-b border-gray-100">
-                                        <span>${cat?.emoji} ${r.title}${r._scaled?' ⚡':''}</span>
-                                        <span class="font-bold">${r.macros.calories} kcal · ${r.macros.protein}g B · ${r.macros.carbs}g W · ${r.macros.fat}g T</span>
-                                    </div>`;
-                                }).join('')}
-                            </div>` : ''}
                         </div>
                     </div>` : ''}
-
-                    <button onclick="window.clearCartAndHome()" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-3 rounded-xl text-sm transition-all">
-                        🗑️ Wyczyść koszyk i zacznij od nowa
-                    </button>
-                </div>
-            `;
+                    <button onclick="window.clearCartAndHome()" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-3 rounded-xl text-sm transition-all">🗑️ Wyczyść koszyk i zacznij od nowa</button>
+                </div>`;
         };
 
         window.toggleIng = function(btn) {
             const text = btn.parentElement.querySelector('.ing-text');
-            if (btn.classList.contains('checked')) {
-                btn.classList.remove('checked','bg-green-500','border-green-500','text-white');
-                btn.textContent = '';
-                if (text) { text.classList.remove('line-through','text-gray-400'); text.classList.add('text-gray-700'); }
-            } else {
-                btn.classList.add('checked','bg-green-500','border-green-500','text-white');
-                btn.textContent = '✓';
-                if (text) { text.classList.add('line-through','text-gray-400'); text.classList.remove('text-gray-700'); }
-            }
+            if (btn.classList.contains('checked')) { btn.classList.remove('checked','bg-green-500','border-green-500','text-white'); btn.textContent=''; if (text) { text.classList.remove('line-through','text-gray-400'); text.classList.add('text-gray-700'); } }
+            else { btn.classList.add('checked','bg-green-500','border-green-500','text-white'); btn.textContent='✓'; if (text) { text.classList.add('line-through','text-gray-400'); text.classList.remove('text-gray-700'); } }
         };
 
         window.copyFullList = async function() {
@@ -646,22 +614,11 @@
             cart.forEach(r => { if (grouped[r.categoryId]) grouped[r.categoryId].push(r); });
             CATEGORIES.filter(cat => grouped[cat.id]?.length > 0).forEach(cat => {
                 text += cat.emoji + " " + cat.label.toUpperCase() + "\n" + "─".repeat(28) + "\n";
-                grouped[cat.id].forEach(recipe => {
-                    text += "  📋 " + recipe.title + (recipe._scaled ? " (⚡"+recipe._targetKcal+" kcal)" : "") + "\n";
-                    recipe.ingredients?.forEach(ing => { text += "     • " + ing + "\n"; });
-                    text += "\n";
-                });
+                grouped[cat.id].forEach(recipe => { text += "  📋 " + recipe.title + (recipe._scaled ? " (⚡"+recipe._targetKcal+" kcal)" : "") + "\n"; recipe.ingredients?.forEach(ing => { text += "     • " + ing + "\n"; }); text += "\n"; });
             });
-            const total = { calories:0, protein:0, carbs:0, fat:0 };
-            let hasMacros = false;
+            const total = { calories:0, protein:0, carbs:0, fat:0 }; let hasMacros = false;
             cart.forEach(r => { if (r.macros) { hasMacros=true; total.calories+=r.macros.calories||0; total.protein+=r.macros.protein||0; total.carbs+=r.macros.carbs||0; total.fat+=r.macros.fat||0; } });
-            if (hasMacros) {
-                text += "📊 MAKROSKŁADNIKI RAZEM\n" + "─".repeat(28) + "\n";
-                text += "🔥 Kalorie: " + Math.round(total.calories) + " / " + dailyLimit + " kcal (pozostało: " + getRemaining() + ")\n";
-                text += "💪 Białko: " + Math.round(total.protein*10)/10 + "g\n";
-                text += "🍞 Węglowodany: " + Math.round(total.carbs*10)/10 + "g\n";
-                text += "🧈 Tłuszcze: " + Math.round(total.fat*10)/10 + "g\n\n";
-            }
+            if (hasMacros) { text += "📊 MAKROSKŁADNIKI RAZEM\n" + "─".repeat(28) + "\n🔥 Kalorie: " + Math.round(total.calories) + " / " + dailyLimit + " kcal\n💪 Białko: " + Math.round(total.protein*10)/10 + "g\n🍞 Węglowodany: " + Math.round(total.carbs*10)/10 + "g\n🧈 Tłuszcze: " + Math.round(total.fat*10)/10 + "g\n\n"; }
             text += "─────────────────────\nWygenerowano: " + new Date().toLocaleString('pl-PL') + "\nLista Zakupów AI 🤖";
             try {
                 await navigator.clipboard.writeText(text);
@@ -705,16 +662,36 @@
             const result = await response.json();
             if (!response.ok || !result.success) throw new Error(result.error || "Błąd serwera");
             if (!result.ingredients?.length) { showError("Pominięto " + filename + ": brak składników"); await sleep(2000); hideProgress(); return; }
-            const recipeData = { title: result.title || filename || "Przepis " + recipeIdCounter++, ingredients: result.ingredients, macros: result.macros||null, category: currentCategory.id, createdAt: new Date().toISOString() };
-            const docRef = await addDoc(collection(db, "recipes"), recipeData);
-            categoryRecipes.push({ firebaseId: docRef.id, ...recipeData });
+
+            // Schowaj spinner — pokaż modal z nazwą do potwierdzenia
             hideProgress();
-            renderCategoryRecipes();
+            const suggestedTitle = result.title || filename || "Przepis " + recipeIdCounter++;
+
+            showNameConfirmModal(suggestedTitle, async (confirmedTitle) => {
+                if (confirmedTitle === null) {
+                    // Użytkownik anulował
+                    return;
+                }
+                showProgress("💾 Zapisywanie...");
+                try {
+                    const recipeData = {
+                        title: confirmedTitle,
+                        ingredients: result.ingredients,
+                        macros: result.macros || null,
+                        category: currentCategory.id,
+                        createdAt: new Date().toISOString()
+                    };
+                    const docRef = await addDoc(collection(db, "recipes"), recipeData);
+                    categoryRecipes.push({ firebaseId: docRef.id, ...recipeData });
+                    hideProgress();
+                    renderCategoryRecipes();
+                } catch(e) {
+                    showError("Błąd zapisu: " + e.message);
+                }
+            });
         }
 
         window.goHome = function() { renderHome(); };
-
-        // INIT
         renderHome();
 
         function showProgress(text) { const el=document.getElementById("progress"); if(el) el.classList.remove("hidden"); const t=document.getElementById("progressText"); if(t) t.textContent=text; const err=document.getElementById("errorBox"); if(err) err.classList.add("hidden"); }
